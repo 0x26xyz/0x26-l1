@@ -1,0 +1,231 @@
+- name: Deploy Kombat live testnet chain services
+  hosts: kombat_live_testnet
+  serial: "{{ and_chain_deploy_serial | default(1) }}"
+  gather_facts: false
+  become: true
+  vars:
+    validator_service_name: "{{ and_chain_validator_service_name | default('kombat-chain') }}"
+    validator_env_file: "{{ and_chain_validator_env_file | default(validator_service_name ~ '.env') }}"
+    validator_service_enabled: "{{ and_chain_validator_service_enabled | default(true) | bool }}"
+    active_chain_services: "{{ ([validator_service_name] if (and_chain_validator_service_enabled | default(true) | bool) else []) + (and_chain_ingress_services | map(attribute='name') | list) }}"
+  pre_tasks:
+    - name: Require operator token
+      ansible.builtin.assert:
+        that:
+          - and_chain_operator_token | length > 0
+        fail_msg: "Set KOMBAT_OPERATOR_TOKEN in the environment before running this playbook."
+      run_once: true
+
+    - name: Require peer relay token
+      ansible.builtin.assert:
+        that:
+          - lookup('env', 'KOMBAT_PEER_RELAY_TOKEN') | trim | length > 0
+        fail_msg: "Set KOMBAT_PEER_RELAY_TOKEN in the environment before running this playbook."
+      run_once: true
+
+    - name: Check local kombat_chain binary
+      ansible.builtin.stat:
+        path: "{{ and_chain_binary_path }}"
+      delegate_to: localhost
+      become: false
+      register: local_binary
+      run_once: true
+
+    - name: Require local kombat_chain binary
+      ansible.builtin.assert:
+        that:
+          - local_binary.stat.exists
+          - local_binary.stat.executable
+        fail_msg: "Build the Linux kombat_chain binary and set KOMBAT_BINARY_PATH."
+      run_once: true
+
+    - name: Read faucet Redis password from Kubernetes secret
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - get
+          - secret
+          - -n
+          - "{{ and_chain_faucet_k8s_namespace }}"
+          - "{{ and_chain_faucet_redis_secret_name }}"
+          - -o
+          - "jsonpath={.data.{{ and_chain_faucet_redis_secret_key }}}"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      register: faucet_redis_password_b64
+      no_log: true
+      when: and_chain_faucet_redis_url | length == 0
+
+    - name: Resolve faucet deployment settings
+      ansible.builtin.set_fact:
+        and_chain_resolved_faucet_redis_url: >-
+          {{ and_chain_faucet_redis_url
+             if and_chain_faucet_redis_url | length > 0
+             else 'redis://:' ~ (faucet_redis_password_b64.stdout | b64decode) ~ '@' ~ and_chain_faucet_redis_node_host ~ ':' ~ and_chain_faucet_redis_node_port }}
+      no_log: true
+
+    - name: Require resolved faucet settings
+      ansible.builtin.assert:
+        that:
+          - and_chain_resolved_faucet_redis_url | length > 0
+        fail_msg: "Faucet Redis URL must resolve from environment or Kubernetes secret."
+      no_log: true
+
+  tasks:
+    - name: Ensure service user exists
+      ansible.builtin.user:
+        name: "{{ and_chain_user }}"
+        system: true
+        home: "{{ and_chain_user_home | default('/var/lib/and-chain') }}"
+        shell: /usr/sbin/nologin
+
+    - name: Ensure install directories exist
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: "{{ and_chain_install_root }}", owner: root, group: root, mode: "0755" }
+        - { path: "{{ and_chain_install_root }}/bin", owner: root, group: root, mode: "0755" }
+        - { path: "{{ and_chain_config_dir }}", owner: root, group: root, mode: "0755" }
+        - { path: "{{ and_chain_state_dir }}", owner: "{{ and_chain_user }}", group: "{{ and_chain_group }}", mode: "0755" }
+        - { path: "{{ and_chain_state_dir }}/snapshots", owner: "{{ and_chain_user }}", group: "{{ and_chain_group }}", mode: "0755" }
+
+    - name: Install kombat_chain binary
+      ansible.builtin.copy:
+        src: "{{ and_chain_binary_path }}"
+        dest: "{{ and_chain_install_root }}/bin/kombat_chain"
+        owner: root
+        group: root
+        mode: "0755"
+      notify: Restart chain services
+
+    - name: Install validator set
+      ansible.builtin.template:
+        src: ../templates/validator-set.toml.j2
+        dest: "{{ and_chain_config_dir }}/validator-set.toml"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart chain services
+
+    - name: Install validator environment
+      ansible.builtin.template:
+        src: ../templates/kombat-chain.env.j2
+        dest: "{{ and_chain_config_dir }}/{{ validator_env_file }}"
+        owner: root
+        group: root
+        mode: "0600"
+      notify: Restart chain services
+
+    - name: Install ingress environments
+      ansible.builtin.template:
+        src: ../templates/kombat-ingress.env.j2
+        dest: "{{ and_chain_config_dir }}/{{ ingress.name }}.env"
+        owner: root
+        group: root
+        mode: "0600"
+      loop: "{{ and_chain_ingress_services }}"
+      loop_control:
+        loop_var: ingress
+      notify: Restart chain services
+
+    - name: Install validator service
+      ansible.builtin.template:
+        src: ../templates/kombat-chain.service.j2
+        dest: "/etc/systemd/system/{{ validator_service_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart chain services
+
+    - name: Install ingress services
+      ansible.builtin.template:
+        src: ../templates/kombat-ingress.service.j2
+        dest: "/etc/systemd/system/{{ ingress.name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: "{{ and_chain_ingress_services }}"
+      loop_control:
+        loop_var: ingress
+      notify: Restart chain services
+
+    - name: Reload systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+    - name: Enable chain services
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: true
+      loop: "{{ active_chain_services }}"
+
+    - name: Stop disabled chain services
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+      loop: "{{ and_chain_disabled_chain_services | default([]) }}"
+      when: and_chain_restart_services | bool
+
+    - name: Stop retired ingress services
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+      loop: "{{ and_chain_retired_ingress_services | default([]) }}"
+      when: and_chain_restart_services | bool
+
+    - name: Apply pending restarts before final running check
+      ansible.builtin.meta: flush_handlers
+
+    - name: Ensure chain services are running
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: started
+      loop: "{{ active_chain_services }}"
+      when: and_chain_restart_services | bool
+
+  handlers:
+    - name: Restart validator service
+      listen: Restart chain services
+      ansible.builtin.systemd_service:
+        name: "{{ validator_service_name }}"
+        state: restarted
+        daemon_reload: true
+      when:
+        - and_chain_restart_services | bool
+        - validator_service_enabled | bool
+
+    - name: Wait for validator RPC after restart
+      listen: Restart chain services
+      ansible.builtin.shell: |
+        set -euo pipefail
+        curl --max-time 3 -sS -H 'content-type: application/json' \
+          --data '{"jsonrpc":"2.0","method":"kombat_chainInfo","params":{},"id":1}' \
+          http://127.0.0.1:{{ and_chain_validator_rpc_port }} | grep -q '"result"'
+      args:
+        executable: /bin/bash
+      register: validator_restart_rpc_check
+      changed_when: false
+      retries: 30
+      delay: 2
+      until: validator_restart_rpc_check.rc == 0
+      when:
+        - and_chain_restart_services | bool
+        - validator_service_enabled | bool
+
+    - name: Restart ingress services
+      listen: Restart chain services
+      ansible.builtin.systemd_service:
+        name: "{{ item.name }}"
+        state: restarted
+        daemon_reload: true
+      loop: "{{ and_chain_ingress_services }}"
+      loop_control:
+        pause: 5
+      when: and_chain_restart_services | bool

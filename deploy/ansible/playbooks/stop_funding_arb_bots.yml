@@ -1,0 +1,20 @@
+- name: Stop and disable Kombat testnet funding-arb bot fleet
+  hosts: "{{ and_chain_funding_arb_hosts | default('loadgen-1') }}"
+  remote_user: root
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../inventory/group_vars/kombat_live_testnet.yml
+  vars:
+    funding_arb_bots: "{{ and_chain_funding_arb_bots | default([]) }}"
+
+  tasks:
+    - name: Stop funding-arb bot services
+      ansible.builtin.systemd_service:
+        name: "kombat-funding-arb-{{ item.id }}.service"
+        state: stopped
+        enabled: false
+      loop: "{{ funding_arb_bots }}"
+      loop_control:
+        label: "{{ item.id }}"
+      failed_when: false

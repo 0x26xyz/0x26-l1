@@ -1,0 +1,14 @@
+[Unit]
+Description=Kombat testnet live oracle feeder bridge
+After=network-online.target {{ and_chain_validator_service_name | default('kombat-chain') }}.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Restart=always
+RestartSec=5
+ExecStart=/usr/bin/env bash -lc 'source {{ and_chain_config_dir }}/{{ and_chain_validator_env_file | default(and_chain_validator_service_name | default("kombat-chain") ~ ".env") }} && export KOMBAT_FEEDER_OPERATOR_TOKEN="${KOMBAT_OPERATOR_TOKEN:?}" && exec {{ and_chain_install_root }}/bin/kombat_feeder --config {{ feeder_config_file }} --live --feeder-id {{ feeder_id_hex }} --submit --submit-interval-ms {{ feeder_submit_interval_ms }}'
+
+[Install]
+WantedBy=multi-user.target

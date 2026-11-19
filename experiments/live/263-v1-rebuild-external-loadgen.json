@@ -1,0 +1,90 @@
+{
+  "id": 263,
+  "name": "v1-rebuild-external-loadgen",
+  "status": "kept diagnostic; not green",
+  "date": "2026-04-27",
+  "base_results": [
+    {
+      "decision_log_item": 251,
+      "committed_tps": 77666.8,
+      "artifact": "/tmp/and-live-251-v1-nginx-stopped-100k-60s",
+      "finding": "green exact-binary reference"
+    },
+    {
+      "decision_log_item": 262,
+      "committed_tps": 63823.1,
+      "artifact": "/tmp/and-live-262b-during-load-profile-100k-60s",
+      "finding": "during-load profile identifies validator-1 as the clearest weak host path"
+    }
+  ],
+  "hypothesis": "Validator-1 host/runtime drift is the largest remaining delivery skew after validator-4 was rebuilt. Rebuilding validator-1 and driving load from a dedicated external loadgen host should recover toward the item251 green reference if the current blocker is weak validator-local loadgen/ingress host runtime behavior rather than Mahi consensus code.",
+  "files": [
+    "chain/scripts/loadtest_live_network_from_validator.sh",
+    "chain/scripts/loadtest_live_network_multi_ingress.sh",
+    "chain/scripts/capture_remote_loadgen_profile.sh",
+    "chain/experiments/live/263-v1-rebuild-external-loadgen.json",
+    "chain/THROUGHPUT_DECISION_LOG.md"
+  ],
+  "git_environment_anchors": {
+    "plan_tag": "chain-exp-263-v1-rebuild-external-loadgen-plan",
+    "result_tag": "chain-exp-263-v1-rebuild-external-loadgen-result",
+    "replay_binary": "/tmp/kombat_chain-live-dd022982",
+    "replay_binary_sha256": "dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd",
+    "inventory": "chain/deploy/ansible/inventory/testnet.yml"
+  },
+  "topology": {
+    "validator-1": {
+      "physical_host": "203.0.113.15",
+      "host_note": "OS reinstalled before this experiment"
+    },
+    "validator-2": { "physical_host": "203.0.113.17" },
+    "validator-3": { "physical_host": "203.0.113.14" },
+    "validator-4": { "physical_host": "203.0.113.16" },
+    "external_loadgen": {
+      "ssh_host": "root@203.0.113.10",
+      "role": "dedicated loadgen runner for all 12 validator ingress endpoints"
+    }
+  },
+  "attempts": {
+    "263a_ssh_setup_failure": "External host SSH rejected concurrent sessions. Fixed with /etc/ssh/sshd_config.d/99-kombat-loadtest.conf (MaxStartups 100:30:200, MaxSessions 200).",
+    "263b_diverged": "Completed at 49,939.95 TPS but v4 diverged at height 120. Likely contaminated by the partial failed 263a run. Marked invalid — do not treat as green.",
+    "263c_valid": "Clean reset + new v1 + external loadgen 203.0.113.10, PIPELINE_DEPTH=1, STRICT_NONCE_RETRY=1."
+  },
+  "commands": [
+    "Deploy exact item251 binary: KOMBAT_BINARY_PATH=/tmp/kombat_chain-live-dd022982 KOMBAT_OPERATOR_TOKEN=... ansible-playbook playbooks/deploy.yml",
+    "Reset state: KOMBAT_OPERATOR_TOKEN=... ansible-playbook playbooks/reset_state.yml",
+    "Run: LOADTEST_EXTERNAL_RUNNER_SSH=root@203.0.113.10 LOADTEST_WRITERS_JSON=/tmp/and-live-261-rebuilt-v4-default-100k-60s/writers-all.json LOADTEST_OUTPUT_DIR=/tmp/and-live-263c-clean-reset-external-loadgen-100k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=1 LOADTEST_FAIL_ON_ERRORS=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 100000 60",
+    "Verify: bash chain/scripts/live_network_status.sh /tmp/and-live-testnet",
+    "curl kombat_getConsensusMetrics and kombat_getStateRootAtHeight on all four validators"
+  ],
+  "result": {
+    "artifact": "/tmp/and-live-263c-clean-reset-external-loadgen-100k-60s",
+    "duration_secs": 60,
+    "committed_total": 2071276,
+    "committed_tps": 34521.3,
+    "ok_total": 2414683,
+    "accepted_rps": 40244.7,
+    "measured_rps_total": 40244.7,
+    "rpc_err_total": 0,
+    "nonce_err_total": 0,
+    "net_err_total": 0,
+    "common_height_state_root": {
+      "height": 70,
+      "matched_all_validators": true
+    },
+    "classification": "Off-box loadgen only drove 40,244.7 measured RPS. Validators were mostly idle. PIPELINE_DEPTH=1 is latency-capping external loadgen throughput. Correctness is clean but the external loadgen host cannot deliver the offered 100k RPS at depth 1."
+  },
+  "success_criteria": {
+    "committed_tps_green_floor": 76000,
+    "zero_rpc_errors": true,
+    "zero_nonce_errors": true,
+    "zero_network_errors": true,
+    "common_height_state_roots_match": true,
+    "external_loadgen_delivers_100k_offered": false
+  },
+  "decision": {
+    "status": "kept diagnostic; not green",
+    "reason": "The rebuilt validator-1 is correct and the external loadgen topology works at low depth, but PIPELINE_DEPTH=1 caps the single external loadgen host at ~40k measured RPS regardless of the 100k offered target. The validators were mostly idle and could have committed more if load had actually arrived. The delivery bottleneck is now on the loadgen side, not the validator side.",
+    "next_move": "Increase PIPELINE_DEPTH to raise effective external concurrency. Must also set LOADTEST_STRICT_NONCE_RETRY=0 since strict nonce retry is incompatible with pipeline depth > 1."
+  }
+}

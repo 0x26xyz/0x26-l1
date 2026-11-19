@@ -1,0 +1,120 @@
+{
+  "id": 273,
+  "title": "Cached payload + parallel-seed 40k live canary",
+  "date": "2026-04-27",
+  "status": "kept 40k green under-driven; 273a invalid",
+  "code_commit": "d2bfe37b785e17805556917aa10f530ce0604d56",
+  "validator_binary_sha256": "dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd",
+  "loadgen_binaries": {
+    "273a_wrong_arch": {
+      "sha256": "703dfeee28accea5745f34c33b17a48b6b1addac5e09831256427cf508e82e48",
+      "platform": "linux/arm64",
+      "local_path": "chain/target-linux-x86_64/release/kombat_loadgen",
+      "reason_invalid": "Uploaded runner binary was Linux ARM on an x86_64 runner pool, so every endpoint failed with Exec format error before load."
+    },
+    "273b_fixed": {
+      "sha256": "3556e24585463ca9602bf8839acd88f4c54835283fe28300fa4d8c618fa12e26",
+      "platform": "linux/x86_64",
+      "local_path": "chain/target-linux-x86_64/release/kombat_loadgen"
+    }
+  },
+  "inventory": "chain/deploy/ansible/inventory/testnet.yml",
+  "topology": {
+    "validators": [
+      "validator-1 root@203.0.113.15",
+      "validator-2 root@203.0.113.17",
+      "validator-3 root@203.0.113.14",
+      "validator-4 root@203.0.113.16"
+    ],
+    "ingress_ports": [
+      8645,
+      8646,
+      8647
+    ],
+    "loadgen_hosts": [
+      "root@203.0.113.10",
+      "root@203.0.113.12",
+      "root@203.0.113.11",
+      "root@203.0.113.13"
+    ],
+    "known_contaminated_runner": "root@203.0.113.11",
+    "excluded_runners": [
+      "root@203.0.113.18",
+      "root@203.0.113.20"
+    ],
+    "writer_seed_tag": 270,
+    "seed_concurrency": 16
+  },
+  "preflight": [
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible-playbook playbooks/reset_state.yml",
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible-playbook playbooks/verify.yml"
+  ],
+  "attempts": [
+    {
+      "name": "273a-cached-payload-parallel16-40k-arm-binary-invalid",
+      "command": "LOADTEST_RUNNER_SSH_OPTS='-i ~/.ssh/id_n2_ssh -o StrictHostKeyChecking=no' LOADTEST_EXTERNAL_RUNNER_HOSTS='root@203.0.113.10 root@203.0.113.12 root@203.0.113.11 root@203.0.113.13' LOADTEST_WRITER_SEED_TAG=270 LOADTEST_SEED_CONCURRENCY=16 LOADTEST_REMOTE_CACHE_DIR=/var/tmp/kombat-loadgen-cache LOADTEST_PAYLOAD_CACHE=1 LOADTEST_OUTPUT_DIR=/tmp/and-live-273a-cached-payload-parallel16-40k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=4 LOADTEST_STRICT_NONCE_RETRY=0 LOADTEST_FAIL_ON_ERRORS=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 40000 60",
+      "artifact": "/tmp/and-live-273a-cached-payload-parallel16-40k-60s",
+      "status": "invalid",
+      "reason": "All twelve endpoint driver commands reached runner launch and then failed with Exec format error because the uploaded loadgen binary was Linux ARM instead of Linux x86_64.",
+      "example_error": "bash: line 1: /var/tmp/kombat-loadgen-cache/validator-1-p8646/kombat_loadgen: cannot execute binary file: Exec format error"
+    },
+    {
+      "name": "273b-cached-payload-parallel16-40k-amd64-green-underdriven",
+      "rebuild_command": "docker run --rm --platform linux/amd64 -v /Users/waynedouglas/github/hx/pvp/chain:/work -w /work rust:1.85-slim bash -lc 'export PATH=/usr/local/cargo/bin:$PATH; apt-get update && apt-get install -y pkg-config libssl-dev build-essential && cargo build --release -p kombat-chain-loadgen --bin kombat_loadgen --manifest-path Cargo.toml && cp target/release/kombat_loadgen target-linux-x86_64/release/kombat_loadgen'",
+      "command": "LOADTEST_RUNNER_SSH_OPTS='-i ~/.ssh/id_n2_ssh -o StrictHostKeyChecking=no' LOADTEST_EXTERNAL_RUNNER_HOSTS='root@203.0.113.10 root@203.0.113.12 root@203.0.113.11 root@203.0.113.13' LOADTEST_WRITER_SEED_TAG=270 LOADTEST_SEED_CONCURRENCY=16 LOADTEST_REMOTE_CACHE_DIR=/var/tmp/kombat-loadgen-cache LOADTEST_PAYLOAD_CACHE=1 LOADTEST_OUTPUT_DIR=/tmp/and-live-273b-cached-payload-parallel16-40k-60s-amd64 LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=4 LOADTEST_STRICT_NONCE_RETRY=0 LOADTEST_FAIL_ON_ERRORS=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 40000 60",
+      "artifact": "/tmp/and-live-273b-cached-payload-parallel16-40k-60s-amd64",
+      "aggregate_summary_sha256": "2a98db02228ca7e4c4fa4b8cab2e3c3e51168e29ef95a550412b96de2ee3f40f",
+      "writers_sha256": "3da7f9495b61e24673bc2f17ae5b2de74d38e2fc0d6f8061ebbc026eb2cfc0c0",
+      "post_run_network_status_sha256": "933bc381d741bdf4038ec1a74806f39b4430a0e7191c1aec7d3cb5f8758575c5",
+      "state_roots_sha256": "de263c10539f3b76bab854ab75dc7a193d034e9f496ee71f4c1d45b49bf883e8",
+      "runner_profile_dir": "/tmp/and-live-273b-cached-payload-parallel16-40k-60s-amd64/runner-profiles",
+      "runner_profile_snapshots": 15,
+      "status": "kept green under-driven",
+      "reason": "The run was clean and converged, but measured delivery fell below item270 and the same three low-outlier endpoints were still pinned to the contaminated runner root@203.0.113.11.",
+      "endpoint_count": 12,
+      "measured_rps_total": 27854.6,
+      "ok_total": 1694232,
+      "committed_total": 1694232,
+      "committed_tps": 28237.2,
+      "rpc_err_total": 0,
+      "nonce_err_total": 0,
+      "net_err_total": 0,
+      "converged_height": 265,
+      "head_hash": "0xd076e61870c8f228156522ba13d2a5cb08eac644c1c7263d2dbe82c98d6ab4df",
+      "state_root_hex": "0xee34fb628cf4d10e9e6181cc955f921230ccad3055a6bbf84ae2194d1f4fca61",
+      "weak_endpoints": [
+        {
+          "endpoint": "validator-1-p8646-60s",
+          "runner": "root@203.0.113.11",
+          "measured_rps": 793.5,
+          "committed": 47608
+        },
+        {
+          "endpoint": "validator-2-p8647-60s",
+          "runner": "root@203.0.113.11",
+          "measured_rps": 767.6,
+          "committed": 46056
+        },
+        {
+          "endpoint": "validator-4-p8645-60s",
+          "runner": "root@203.0.113.11",
+          "measured_rps": 1206.8,
+          "committed": 72408
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    "/tmp/and-live-273a-cached-payload-parallel16-40k-60s",
+    "/tmp/and-live-273b-cached-payload-parallel16-40k-60s-amd64",
+    "/tmp/and-live-273b-cached-payload-parallel16-40k-60s-amd64/post-run-network-status.txt",
+    "/tmp/and-live-273b-cached-payload-parallel16-40k-60s-amd64/state-roots-height-265.txt",
+    "/tmp/and-live-273b-cached-payload-parallel16-40k-60s-amd64/runner-profiles"
+  ],
+  "runner_observations": [
+    "The three weakest endpoints exactly matched the three endpoints assigned to root@203.0.113.11, reproducing the item270 mapping.",
+    "Runner profile snapshots repeatedly showed root@203.0.113.11 carrying kube-apiserver, etcd, kube-controller-manager, and kubelet with load averages in the ~7-10 range during and after the run.",
+    "The other three runners were also not pristine, but they did not produce the same extreme endpoint collapse as root@203.0.113.11."
+  ],
+  "conclusion": "273b proves current main still produces a clean green 40k live run with payload caching and parallel writer provisioning, but the run is under-driven and should not replace item270's 34,202.8 committed TPS as the best green performance reference. The next benchmark should replace or isolate root@203.0.113.11 before spending another 40k or 60k rung."
+}

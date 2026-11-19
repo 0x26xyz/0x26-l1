@@ -1,0 +1,285 @@
+- name: Verify Kombat live testnet chain services
+  hosts: kombat_live_testnet
+  gather_facts: false
+  become: true
+  vars:
+    validator_service_name: "{{ and_chain_validator_service_name | default('kombat-chain') }}"
+    validator_env_file: "{{ and_chain_validator_env_file | default(validator_service_name ~ '.env') }}"
+    chain_services: "{{ ([validator_service_name] if (and_chain_validator_service_enabled | default(true) | bool) else []) + (and_chain_ingress_services | map(attribute='name') | list) }}"
+    chain_ports: "{{ ([and_chain_validator_rpc_port] if (and_chain_validator_service_enabled | default(true) | bool) else []) + (and_chain_ingress_services | map(attribute='port') | list) }}"
+    required_env_lines:
+      - "KOMBAT_CONSENSUS=mahi"
+      - "KOMBAT_MAHI_MULTILEADER={{ and_chain_mahi_multileader }}"
+      - "KOMBAT_MAHI_ALLOW_IDLE_EMPTY_ROUNDS={{ and_chain_mahi_allow_idle_empty_rounds }}"
+      - "KOMBAT_MAHI_OBSERVER_ASYNC_RELAY={{ and_chain_mahi_observer_async_relay }}"
+      - "KOMBAT_NETWORK_SUBMIT_FORWARDING_ENABLED={{ and_chain_network_submit_forwarding_enabled | default(false) | bool | ternary('1', '0') }}"
+      - "KOMBAT_MAHI_ASYNC_BLOCK_BROADCAST={{ and_chain_mahi_async_block_broadcast }}"
+      - "KOMBAT_MAHI_MERGED_EXECUTION_BATCH={{ and_chain_mahi_merged_execution_batch }}"
+      - "KOMBAT_MAHI_OWNER_RELAY_REDUNDANCY={{ and_chain_mahi_owner_relay_redundancy }}"
+      - "KOMBAT_MAHI_OWNER_RELAY_LAG_ROUNDS={{ and_chain_mahi_owner_relay_lag_rounds }}"
+      - "KOMBAT_LOCAL_BRIDGE_MUTATIONS_ENABLED=0"
+    required_faucet_env_patterns:
+      - "^KOMBAT_FAUCET_REDIS_URL=redis://:"
+      - "^KOMBAT_FAUCET_ADDRESS_COOLDOWN_SECS={{ and_chain_faucet_address_cooldown_secs }}$"
+      - "^KOMBAT_FAUCET_IP_WINDOW_SECS={{ and_chain_faucet_ip_window_secs }}$"
+      - "^KOMBAT_FAUCET_IP_MAX_CLAIMS={{ and_chain_faucet_ip_max_claims }}$"
+      - "^KOMBAT_FAUCET_GLOBAL_WINDOW_SECS={{ and_chain_faucet_global_window_secs }}$"
+      - "^KOMBAT_FAUCET_GLOBAL_MAX_CLAIMS={{ and_chain_faucet_global_max_claims }}$"
+  tasks:
+    - name: Check service is active
+      ansible.builtin.command: "systemctl is-active {{ item }}"
+      register: service_active
+      changed_when: false
+      retries: 15
+      delay: 2
+      until:
+        - service_active.rc == 0
+        - service_active.stdout == "active"
+      loop: "{{ chain_services }}"
+
+    - name: Check required Mahi env lines on every env file
+      ansible.builtin.shell: |
+        set -euo pipefail
+        env_files="{% if and_chain_validator_service_enabled | default(true) | bool %}{{ and_chain_config_dir }}/{{ validator_env_file }}{% endif %}{% for ingress in and_chain_ingress_services %} {{ and_chain_config_dir }}/{{ ingress.name }}.env{% endfor %}"
+        for env_file in $env_files; do
+          {% for line in required_env_lines %}
+          grep -qx '{{ line }}' "$env_file"
+          {% endfor %}
+        done
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Check required faucet env lines on every env file
+      ansible.builtin.shell: |
+        set -euo pipefail
+        env_files="{% if and_chain_validator_service_enabled | default(true) | bool %}{{ and_chain_config_dir }}/{{ validator_env_file }}{% endif %}{% for ingress in and_chain_ingress_services %} {{ and_chain_config_dir }}/{{ ingress.name }}.env{% endfor %}"
+        for env_file in $env_files; do
+          {% for pattern in required_faucet_env_patterns %}
+          grep -Eq '{{ pattern }}' "$env_file"
+          {% endfor %}
+        done
+      args:
+        executable: /bin/bash
+      changed_when: false
+      no_log: true
+
+    - name: Query every local RPC port
+      ansible.builtin.shell: |
+        set -euo pipefail
+        curl --max-time 3 -sS -H 'content-type: application/json' \
+          --data '{"jsonrpc":"2.0","method":"kombat_chainInfo","params":{},"id":1}' \
+          http://127.0.0.1:{{ item }} | grep -q '"result"'
+      args:
+        executable: /bin/bash
+      register: rpc_check
+      changed_when: false
+      retries: 30
+      delay: 2
+      until: rpc_check.rc == 0
+      loop: "{{ chain_ports }}"
+
+    - name: Capture binary sha256
+      ansible.builtin.command: "sha256sum {{ and_chain_install_root }}/bin/kombat_chain"
+      changed_when: false
+      register: binary_sha
+
+    - name: Print binary sha256
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} {{ binary_sha.stdout }}"
+
+- name: Audit durable validator head consistency
+  hosts: localhost
+  gather_facts: false
+  vars:
+    validator_head_consistency_strict: "{{ (lookup('env', 'KOMBAT_VERIFY_HEAD_CONSISTENCY_STRICT') | default('0', true) | lower) in ['1', 'true', 'yes', 'on'] }}"
+    validator_head_max_live_lag: "{{ lookup('env', 'KOMBAT_VERIFY_HEAD_MAX_LIVE_LAG') | default('3', true) }}"
+  tasks:
+    - name: Capture durable validator head summary
+      ansible.builtin.shell: |
+        set -euo pipefail
+        final_rows=""
+        final_unique_heads=0
+        max_live_lag={{ validator_head_max_live_lag }}
+        for attempt in $(seq 1 12); do
+          rows=$(
+        {% for host in groups['kombat_live_testnet'] | default([]) %}
+        {% set state_backend = hostvars[host].and_chain_state_backend | default('memory') %}
+        {% set validator_enabled = hostvars[host].validator_enabled | default(hostvars[host].and_chain_validator_service_enabled | default(true)) %}
+        {% if state_backend == 'redb' and validator_enabled %}
+          curl --max-time 5 -sS -H 'content-type: application/json' \
+            --data '{"jsonrpc":"2.0","method":"kombat_chainInfo","params":{},"id":1}' \
+            'http://{{ hostvars[host].ansible_host }}:{{ hostvars[host].and_chain_validator_rpc_port | default(8545) }}' \
+            | jq -r '"{{ host }} height=\(.result.head_height) hash=\(.result.head_hash_hex) root=\(.result.committed_state_root_hex) quarantine=\(.result.quarantined_block_count)"'
+        {% endif %}
+        {% endfor %}
+          )
+          normalized=$(printf '%s\n' "$rows" | awk 'NF {height=$2; hash=$3; root=$4; sub(/^height=/, "", height); sub(/^hash=/, "", hash); sub(/^root=/, "", root); print height" "hash" "root}')
+          unique_heads=$(printf '%s\n' "$normalized" | awk 'NF {print $1" "$2" "$3}' | sort -u | wc -l | tr -d ' ')
+          unique_roots=$(printf '%s\n' "$normalized" | awk 'NF {print $3}' | sort -u | wc -l | tr -d ' ')
+          same_height_conflicts=$(printf '%s\n' "$normalized" | awk 'NF {print $1" "$3" "$2}' | sort -u | awk 'NF {key=$1" "$2; count[key]++} END {for (key in count) if (count[key] > 1) conflicts++; print conflicts + 0}')
+          height_spread=$(printf '%s\n' "$normalized" | awk 'NF {if (!seen) {min=$1; max=$1; seen=1} if ($1 < min) min=$1; if ($1 > max) max=$1} END {if (seen) print max - min; else print 999999}')
+          final_rows="$rows"
+          final_unique_heads="${unique_heads:-0}"
+          if [ "${unique_heads:-0}" = "1" ]; then
+            printf '%s\n' "$rows"
+            echo "HEAD_CONVERGED sample=$attempt"
+            exit 0
+          fi
+          if [ "${unique_roots:-0}" = "1" ] && [ "${same_height_conflicts:-1}" = "0" ] && [ "${height_spread:-999999}" -le "$max_live_lag" ]; then
+            printf '%s\n' "$rows"
+            echo "HEAD_CONSISTENT_LIVE sample=$attempt height_spread=$height_spread"
+            exit 0
+          fi
+          sleep 1
+        done
+        printf '%s\n' "$final_rows"
+        if [ "${final_unique_heads:-0}" != "1" ]; then
+          echo "HEAD_DIVERGENCE durable validator heads differ"
+          exit 42
+        fi
+      args:
+        executable: /bin/bash
+      register: durable_validator_head_audit
+      changed_when: false
+      failed_when: durable_validator_head_audit.rc not in [0, 42] or ((validator_head_consistency_strict | bool) and durable_validator_head_audit.rc != 0)
+
+    - name: Print durable validator head summary
+      ansible.builtin.debug:
+        msg: "{{ durable_validator_head_audit.stdout_lines }}"
+
+    - name: Warn when durable validator heads differ in report-only mode
+      ansible.builtin.debug:
+        msg: "Durable validator head divergence detected. Set KOMBAT_VERIFY_HEAD_CONSISTENCY_STRICT=1 to make this audit fail the verify gate."
+      when:
+        - durable_validator_head_audit.rc == 42
+        - not (validator_head_consistency_strict | bool)
+
+    - name: Capture durable validator head liveness
+      ansible.builtin.shell: |
+        set -euo pipefail
+        initial_rows=$(
+        {% for host in groups['kombat_live_testnet'] | default([]) %}
+        {% set state_backend = hostvars[host].and_chain_state_backend | default('memory') %}
+        {% set validator_enabled = hostvars[host].validator_enabled | default(hostvars[host].and_chain_validator_service_enabled | default(true)) %}
+        {% if state_backend == 'redb' and validator_enabled %}
+          curl --max-time 5 -sS -H 'content-type: application/json' \
+            --data '{"jsonrpc":"2.0","method":"kombat_chainInfo","params":{},"id":1}' \
+            'http://{{ hostvars[host].ansible_host }}:{{ hostvars[host].and_chain_validator_rpc_port | default(8545) }}' \
+            | jq -r '"{{ host }} \(.result.head_height) \(.result.head_hash_hex) \(.result.committed_state_root_hex)"'
+        {% endif %}
+        {% endfor %}
+        )
+        sleep {{ lookup('env', 'KOMBAT_VERIFY_HEAD_LIVENESS_SAMPLE_SECS') | default('8', true) }}
+        final_rows=$(
+        {% for host in groups['kombat_live_testnet'] | default([]) %}
+        {% set state_backend = hostvars[host].and_chain_state_backend | default('memory') %}
+        {% set validator_enabled = hostvars[host].validator_enabled | default(hostvars[host].and_chain_validator_service_enabled | default(true)) %}
+        {% if state_backend == 'redb' and validator_enabled %}
+          curl --max-time 5 -sS -H 'content-type: application/json' \
+            --data '{"jsonrpc":"2.0","method":"kombat_chainInfo","params":{},"id":1}' \
+            'http://{{ hostvars[host].ansible_host }}:{{ hostvars[host].and_chain_validator_rpc_port | default(8545) }}' \
+            | jq -r '"{{ host }} \(.result.head_height) \(.result.head_hash_hex) \(.result.committed_state_root_hex)"'
+        {% endif %}
+        {% endfor %}
+        )
+        printf 'initial:\n%s\n' "$initial_rows"
+        printf 'final:\n%s\n' "$final_rows"
+        stale=0
+        while read -r host initial_height initial_hash initial_root; do
+          [ -n "${host:-}" ] || continue
+          final_height=$(printf '%s\n' "$final_rows" | awk -v host="$host" '$1 == host {print $2}')
+          final_hash=$(printf '%s\n' "$final_rows" | awk -v host="$host" '$1 == host {print $3}')
+          final_root=$(printf '%s\n' "$final_rows" | awk -v host="$host" '$1 == host {print $4}')
+          if [ -z "${final_height:-}" ] || [ "$final_height" -le "$initial_height" ]; then
+            echo "HEAD_STALLED host=$host initial_height=$initial_height initial_hash=$initial_hash initial_root=$initial_root final_height=${final_height:-missing} final_hash=${final_hash:-missing} final_root=${final_root:-missing}"
+            stale=$((stale + 1))
+          else
+            echo "HEAD_ADVANCED host=$host initial_height=$initial_height final_height=$final_height final_hash=$final_hash final_root=$final_root"
+          fi
+        done <<< "$initial_rows"
+        if [ "$stale" -ne 0 ]; then
+          exit 43
+        fi
+        final_normalized=$(printf '%s\n' "$final_rows" | awk 'NF {print $2" "$3" "$4}')
+        final_unique_heads=$(printf '%s\n' "$final_normalized" | awk 'NF {print $1" "$2" "$3}' | sort -u | wc -l | tr -d ' ')
+        final_unique_roots=$(printf '%s\n' "$final_normalized" | awk 'NF {print $3}' | sort -u | wc -l | tr -d ' ')
+        final_same_height_conflicts=$(printf '%s\n' "$final_normalized" | awk 'NF {print $1" "$3" "$2}' | sort -u | awk 'NF {key=$1" "$2; count[key]++} END {for (key in count) if (count[key] > 1) conflicts++; print conflicts + 0}')
+        final_height_spread=$(printf '%s\n' "$final_normalized" | awk 'NF {if (!seen) {min=$1; max=$1; seen=1} if ($1 < min) min=$1; if ($1 > max) max=$1} END {if (seen) print max - min; else print 999999}')
+        if [ "${final_unique_heads:-0}" != "1" ] && { [ "${final_unique_roots:-0}" != "1" ] || [ "${final_same_height_conflicts:-1}" != "0" ] || [ "${final_height_spread:-999999}" -gt "{{ validator_head_max_live_lag }}" ]; }; then
+          echo "HEAD_DIVERGENCE durable validator heads differ after liveness"
+          exit 42
+        fi
+        if [ "${final_unique_heads:-0}" != "1" ]; then
+          echo "HEAD_CONSISTENT_LIVE_AFTER_LIVENESS height_spread=$final_height_spread"
+        fi
+      args:
+        executable: /bin/bash
+      register: durable_validator_head_liveness
+      changed_when: false
+      failed_when: durable_validator_head_liveness.rc not in [0, 42, 43] or ((validator_head_consistency_strict | bool) and durable_validator_head_liveness.rc != 0)
+
+    - name: Print durable validator head liveness
+      ansible.builtin.debug:
+        msg: "{{ durable_validator_head_liveness.stdout_lines }}"
+
+    - name: Warn when durable validator heads do not advance in report-only mode
+      ansible.builtin.debug:
+        msg: "Durable validator head liveness stalled. Set KOMBAT_VERIFY_HEAD_CONSISTENCY_STRICT=1 to make this audit fail the verify gate."
+      when:
+        - durable_validator_head_liveness.rc == 43
+        - not (validator_head_consistency_strict | bool)
+
+    - name: Warn when durable validator heads diverge after liveness in report-only mode
+      ansible.builtin.debug:
+        msg: "Durable validator head divergence detected after liveness. Set KOMBAT_VERIFY_HEAD_CONSISTENCY_STRICT=1 to make this audit fail the verify gate."
+      when:
+        - durable_validator_head_liveness.rc == 42
+        - not (validator_head_consistency_strict | bool)
+
+- name: Verify Kombat market-data services
+  hosts: "{{ lookup('env', 'KOMBAT_MARKET_DATA_HOSTS') | default('kombat_market_data', true) }}"
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../inventory/group_vars/kombat_live_testnet.yml
+  tasks:
+    - name: Check QuestDB service is active
+      ansible.builtin.command: "systemctl is-active {{ and_chain_questdb_service_name }}"
+      register: questdb_active
+      changed_when: false
+      retries: 15
+      delay: 2
+      until:
+        - questdb_active.rc == 0
+        - questdb_active.stdout == "active"
+
+    - name: Check market-data service is active
+      ansible.builtin.command: "systemctl is-active {{ and_chain_market_data_service_name }}"
+      register: market_data_active
+      changed_when: false
+      retries: 15
+      delay: 2
+      until:
+        - market_data_active.rc == 0
+        - market_data_active.stdout == "active"
+
+    - name: Query local market-data health endpoint
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ and_chain_market_data_port }}/healthz"
+        method: GET
+        status_code: 200
+        return_content: true
+      register: market_data_health
+      retries: 10
+      delay: 2
+      until: market_data_health.status == 200
+
+    - name: Capture market-data binary sha256
+      ansible.builtin.command: "sha256sum {{ and_chain_install_root }}/bin/kombat_market_data"
+      changed_when: false
+      register: market_data_binary_sha
+
+    - name: Print market-data binary sha256
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} {{ market_data_binary_sha.stdout }}"

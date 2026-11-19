@@ -1,0 +1,132 @@
+{
+  "id": 258,
+  "name": "post-reboot-item251-replay",
+  "status": "binned",
+  "date": "2026-04-26",
+  "base_results": [
+    {
+      "decision_log_item": 251,
+      "committed_tps": 77666.8,
+      "artifact": "/tmp/and-live-251-v1-nginx-stopped-100k-60s",
+      "finding": "clean item251 reference with exact binary dd022982 and default 12-endpoint topology"
+    },
+    {
+      "decision_log_item": 256,
+      "committed_tps": 25380.6,
+      "artifact": "/tmp/and-live-256-item251-known-good-replay-100k-60s",
+      "finding": "same binary/config no longer reproduced item251 after host/runtime drift"
+    },
+    {
+      "decision_log_item": 257,
+      "finding": "post-run snapshot identified validator-4 as the strongest host/runtime outlier under the same binary/config"
+    }
+  ],
+  "hypothesis": "The item251 replay drift is caused by transient VPS/runtime host state rather than code or Ansible config. Rebooting all four hosts, redeploying the exact item251 binary/config, wiping chain state, and rerunning the default 100k/60s benchmark should recover item251-class throughput if the issue is host-runtime drift.",
+  "files": [
+    "chain/experiments/live/258-post-reboot-item251-replay.json",
+    "chain/THROUGHPUT_DECISION_LOG.md"
+  ],
+  "git_environment_anchors": {
+    "plan_tag": "chain-exp-258-post-reboot-item251-replay-plan",
+    "reference_result_tag": "chain-exp-251-v1-nginx-isolation-result",
+    "replay_binary": "/tmp/kombat_chain-live-dd022982",
+    "replay_binary_sha256": "dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd",
+    "expected_ansible_config": "default three-ingress topology from kombat_live_testnet group vars"
+  },
+  "planned_commands": [
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible kombat_live_testnet -m reboot -a 'reboot_timeout=600'",
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible-playbook playbooks/stop_non_chain_services.yml",
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) KOMBAT_BINARY_PATH=/tmp/kombat_chain-live-dd022982 .venv/bin/ansible-playbook playbooks/deploy.yml",
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) KOMBAT_BINARY_PATH=/tmp/kombat_chain-live-dd022982 .venv/bin/ansible-playbook playbooks/verify.yml",
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible kombat_live_testnet -m shell -a 'set -euo pipefail; systemctl stop kombat-chain-ingress3 kombat-chain-ingress2 kombat-chain-ingress kombat-chain; rm -rf /var/lib/and-chain; mkdir -p /var/lib/and-chain/snapshots; chown -R and-chain:and-chain /var/lib/and-chain; systemctl start kombat-chain; systemctl start kombat-chain-ingress kombat-chain-ingress2 kombat-chain-ingress3'",
+    "LOADTEST_OUTPUT_DIR=/tmp/and-live-258-post-reboot-item251-replay-100k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=1 LOADTEST_FAIL_ON_ERRORS=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 100000 60",
+    "bash chain/scripts/live_network_status.sh /tmp/and-live-testnet"
+  ],
+  "execution_notes": [
+    "All four hosts rebooted successfully through Ansible: validator-1 elapsed 80s, validator-2 37s, validator-3 38s, validator-4 52s.",
+    "validator-1 nginx was active after reboot and was stopped again before deploy; validators 2-4 reported nginx absent.",
+    "The first ad-hoc wipe command failed before doing work because Ansible used /bin/sh and rejected pipefail. The command was rerun successfully with executable=/bin/bash.",
+    "All four validators verified the exact replay binary sha256 dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd before the benchmark."
+  ],
+  "result": {
+    "artifact": "/tmp/and-live-258-post-reboot-item251-replay-100k-60s",
+    "committed_total": 2157183,
+    "duration_secs": 60,
+    "committed_tps": 35953.1,
+    "ok_total": 3620496,
+    "measured_rps_total": 55738.8,
+    "rpc_err_total": 0,
+    "nonce_err_total": 0,
+    "net_err_total": 0,
+    "common_height_state_root": {
+      "height": 91,
+      "block_hash_hex": "0x823a965a1bc07f9001fe8db9ad3af979681a1cc15d05b90b111a753428e709b1",
+      "state_root_hex": "0x3c11e797f0c5ffddf0f6ebebca3d0d8648790f2eed45b1a39968fa0021bc2685",
+      "all_validators_match": true
+    },
+    "endpoint_rps": {
+      "validator-1": [1882.3, 1961.6, 1913.2],
+      "validator-2": [7151.7, 7057.6, 7273.9],
+      "validator-3": [8336.7, 8322.5, 8325.9],
+      "validator-4": [1196.3, 1147.5, 1169.6]
+    },
+    "post_run_pre_admitted_items": {
+      "validator-1": 33584,
+      "validator-2": 19528,
+      "validator-3": 9416,
+      "validator-4": 4360
+    },
+    "post_run_consensus_metrics": {
+      "commit_log_hash_hex": "0xdcaa4bc4a9cb86f40c33f7a58de884b8436201fec6631886ec22f0142db4d43e",
+      "committed_block_count": 1096,
+      "executed_intent_count": 3620496,
+      "all_validators_match": true,
+      "validator_latencies": [
+        {
+          "validator": "validator-1",
+          "sigverify_p50_p90_max_ms": [171, 410, 1167],
+          "inbound_accept_p90_max_ms": [9, 20],
+          "commit_execution_batch_p50_p90_max_ms": [195, 332, 731],
+          "kombat_chain_cpu_usage_nsec": 456741184000
+        },
+        {
+          "validator": "validator-2",
+          "sigverify_p50_p90_max_ms": [138, 273, 436],
+          "inbound_accept_p90_max_ms": [3, 8],
+          "commit_execution_batch_p50_p90_max_ms": [167, 272, 513],
+          "kombat_chain_cpu_usage_nsec": 225760887000
+        },
+        {
+          "validator": "validator-3",
+          "sigverify_p50_p90_max_ms": [132, 237, 395],
+          "inbound_accept_p90_max_ms": [2, 12],
+          "commit_execution_batch_p50_p90_max_ms": [165, 245, 458],
+          "kombat_chain_cpu_usage_nsec": 235760660000
+        },
+        {
+          "validator": "validator-4",
+          "sigverify_p50_p90_max_ms": [187, 371, 893],
+          "inbound_accept_p90_max_ms": [11, 51],
+          "commit_execution_batch_p50_p90_max_ms": [202, 324, 549],
+          "kombat_chain_cpu_usage_nsec": 601778819000
+        }
+      ]
+    }
+  },
+  "success_criteria": {
+    "throughput_floor_tps": 76000,
+    "reference_tps": 77666.8,
+    "zero_rpc_errors": true,
+    "zero_nonce_errors": true,
+    "zero_network_errors": true,
+    "common_height_state_roots_match": true,
+    "mahi_pre_admitted_pools_drained_after_standard_drain": true,
+    "validator4_latency_recovers_toward_v2_v3": true
+  },
+  "decision": {
+    "status": "binned",
+    "reason": "Rebooting the hosts improved throughput from item256's 25,380.6 TPS to 35,953.1 TPS and preserved correctness, but it did not recover item251-class green throughput. Validator-4 remains the weakest ingress host and v1 remains weak; v2/v3 are still the only endpoints near target. The issue is not transient enough to solve with a simple reboot.",
+    "next_move": "Run a host/role isolation experiment: either swap validator roles across physical hosts or provision a fresh Ansible baseline, then replay the exact item251 binary/config. Avoid protocol code changes until host topology is controlled again."
+  },
+  "rollback": "The exact item251 binary/config remains deployed. Do not treat this as a code regression fix; use the result to drive host role-swap or fresh-node recovery."
+}

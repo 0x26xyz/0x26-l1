@@ -1,0 +1,31 @@
+[package]
+name = "kombat-chain-node"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[features]
+test-support = []
+
+[dependencies]
+arc-swap = "1.7.1"
+borsh = { version = "1.6.1", features = ["derive"] }
+ed25519-dalek = "2.1.1"
+kombat-chain-consensus = { path = "../consensus" }
+kombat-chain-execution = { path = "../execution" }
+kombat-chain-state-db = { path = "../state-db" }
+kombat-chain-network = { path = "../network" }
+kombat-chain-policy = { path = "../policy" }
+kombat-chain-matching = { path = "../matching" }
+kombat-chain-oracle = { path = "../oracle" }
+kombat-chain-streams = { path = "../streams" }
+parking_lot = "0.12.3"
+revm = "36.0.0"
+sha2 = "0.10.9"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

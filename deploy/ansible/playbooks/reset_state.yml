@@ -1,0 +1,112 @@
+- name: Reset Kombat live testnet chain state
+  hosts: kombat_live_testnet
+  gather_facts: false
+  become: true
+  vars:
+    validator_service_name: "{{ and_chain_validator_service_name | default('kombat-chain') }}"
+    bootstrap_validator_host: "{{ and_chain_reset_bootstrap_validator_host | default('validator-1') }}"
+    start_non_bootstrap_validators: "{{ and_chain_reset_start_non_bootstrap_validators | default(true) | bool }}"
+    start_ingress_services: "{{ and_chain_reset_start_ingress_services | default(true) | bool }}"
+    ingress_service_names: "{{ and_chain_ingress_services | map(attribute='name') | list }}"
+    ingress_ports: "{{ and_chain_ingress_services | map(attribute='port') | list }}"
+    chain_services: "{{ [validator_service_name] + ingress_service_names }}"
+  tasks:
+    - name: Stop chain services
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: stopped
+      loop: "{{ chain_services }}"
+
+    - name: Clear failed chain service state
+      ansible.builtin.command: "systemctl reset-failed {{ item }}"
+      changed_when: false
+      failed_when: false
+      loop: "{{ chain_services }}"
+
+    - name: Stop any stale chain processes
+      ansible.builtin.shell: |
+        set -euo pipefail
+        pkill -TERM -x kombat_chain || true
+        sleep 1
+        pkill -KILL -x kombat_chain || true
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Reset state directory
+      ansible.builtin.shell: |
+        set -euo pipefail
+        rm -rf "{{ and_chain_state_dir }}"
+        mkdir -p "{{ and_chain_state_dir }}/snapshots"
+        chown -R "{{ and_chain_user }}:{{ and_chain_group }}" "{{ and_chain_state_dir }}"
+      args:
+        executable: /bin/bash
+
+    - name: Start bootstrap validator service
+      ansible.builtin.systemd_service:
+        name: "{{ validator_service_name }}"
+        state: started
+      when: inventory_hostname == bootstrap_validator_host
+
+    - name: Wait for bootstrap validator RPC after reset
+      ansible.builtin.shell: |
+        set -euo pipefail
+        curl --max-time 3 -sS -H 'content-type: application/json' \
+          --data '{"jsonrpc":"2.0","method":"kombat_chainInfo","params":{},"id":1}' \
+          http://127.0.0.1:{{ and_chain_validator_rpc_port }} | grep -q '"result"'
+      args:
+        executable: /bin/bash
+      register: reset_validator_rpc_check
+      changed_when: false
+      retries: 30
+      delay: 2
+      until: reset_validator_rpc_check.rc == 0
+      when: inventory_hostname == bootstrap_validator_host
+
+    - name: Start non-bootstrap validator services
+      ansible.builtin.systemd_service:
+        name: "{{ validator_service_name }}"
+        state: started
+      when:
+        - start_non_bootstrap_validators
+        - inventory_hostname != bootstrap_validator_host
+
+    - name: Wait for non-bootstrap validator RPC after reset
+      ansible.builtin.shell: |
+        set -euo pipefail
+        curl --max-time 3 -sS -H 'content-type: application/json' \
+          --data '{"jsonrpc":"2.0","method":"kombat_chainInfo","params":{},"id":1}' \
+          http://127.0.0.1:{{ and_chain_validator_rpc_port }} | grep -q '"result"'
+      args:
+        executable: /bin/bash
+      register: reset_non_bootstrap_validator_rpc_check
+      changed_when: false
+      retries: 30
+      delay: 2
+      until: reset_non_bootstrap_validator_rpc_check.rc == 0
+      when:
+        - start_non_bootstrap_validators
+        - inventory_hostname != bootstrap_validator_host
+
+    - name: Start ingress services
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: started
+      loop: "{{ ingress_service_names }}"
+      when: start_ingress_services
+
+    - name: Wait for ingress RPC ports after reset
+      ansible.builtin.shell: |
+        set -euo pipefail
+        curl --max-time 3 -sS -H 'content-type: application/json' \
+          --data '{"jsonrpc":"2.0","method":"kombat_chainInfo","params":{},"id":1}' \
+          http://127.0.0.1:{{ item }} | grep -q '"result"'
+      args:
+        executable: /bin/bash
+      register: reset_ingress_rpc_check
+      changed_when: false
+      retries: 30
+      delay: 2
+      until: reset_ingress_rpc_check.rc == 0
+      loop: "{{ ingress_ports }}"
+      when: start_ingress_services

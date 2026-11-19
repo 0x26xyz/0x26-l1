@@ -1,0 +1,214 @@
+- name: Deploy Kombat testnet perps demo liquidity bot
+  hosts: "{{ and_chain_liquidity_bot_hosts | default('loadgen-1') }}"
+  remote_user: root
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../inventory/group_vars/kombat_live_testnet.yml
+  vars:
+    liquidity_bot_service_name: "{{ and_chain_liquidity_bot_service_name | default('kombat-perps-demo-liquidity-bot') }}"
+    liquidity_bot_install_dir: "{{ and_chain_liquidity_bot_install_dir | default('/opt/and-chain/bin') }}"
+    liquidity_bot_config_dir: "{{ and_chain_liquidity_bot_config_dir | default('/etc/and-chain') }}"
+    liquidity_bot_env_file: "{{ liquidity_bot_config_dir }}/perps-demo-liquidity-bot.env"
+    liquidity_bot_binary_path: "{{ lookup('env', 'KOMBAT_MM_BOT_BINARY_PATH') | default(playbook_dir + '/../../../target-linux-x86_64/release/kombat_mm_bot', true) }}"
+    liquidity_bot_rpc_url: "{{ and_chain_liquidity_bot_rpc_url | default(and_chain_market_data_rpc_url | default('https://testnet.0x26.xyz/api')) }}"
+    liquidity_bot_chain_id: "{{ and_chain_chain_id | default(7) }}"
+    liquidity_bot_market_ids: "{{ and_chain_liquidity_bot_market_ids | default('7,8,9,10,11') }}"
+    liquidity_bot_maker_account_id: "{{ and_chain_liquidity_bot_maker_account_id | default(260001) }}"
+    liquidity_bot_use_demo_delegation: "{{ and_chain_liquidity_bot_use_demo_delegation | default(false) | bool }}"
+    liquidity_bot_delegation_id_hex: "{{ and_chain_liquidity_bot_delegation_id_hex | default('') }}"
+    liquidity_bot_maker_policy_id: "{{ and_chain_liquidity_bot_maker_policy_id | default(26000101) }}"
+    liquidity_bot_maker_policy_base_id: "{{ and_chain_liquidity_bot_maker_policy_base_id | default(liquidity_bot_maker_policy_id) }}"
+    liquidity_bot_maker_owner_secret_hex: "{{ and_chain_liquidity_bot_maker_owner_secret_hex | default('') }}"
+    liquidity_bot_maker_session_secret_hex: "{{ and_chain_liquidity_bot_maker_session_secret_hex | default('') }}"
+    liquidity_bot_quote_interval_ms: "{{ and_chain_liquidity_bot_quote_interval_ms | default(30000) }}"
+    liquidity_bot_quote_concurrency: "{{ and_chain_liquidity_bot_quote_concurrency | default(8) }}"
+    liquidity_bot_intent_submit_delay_ms: "{{ and_chain_liquidity_bot_intent_submit_delay_ms | default(0) }}"
+    liquidity_bot_quote_refresh_every_cycles: "{{ and_chain_liquidity_bot_quote_refresh_every_cycles | default(1) }}"
+    liquidity_bot_quote_refresh_price_move_bps: "{{ and_chain_liquidity_bot_quote_refresh_price_move_bps | default(0) }}"
+    liquidity_bot_spread_bps: "{{ and_chain_liquidity_bot_spread_bps | default(5) }}"
+    liquidity_bot_quote_levels: "{{ and_chain_liquidity_bot_quote_levels | default(10) }}"
+    liquidity_bot_level_step_bps: "{{ and_chain_liquidity_bot_level_step_bps | default(5) }}"
+    liquidity_bot_level_size_growth_bps: "{{ and_chain_liquidity_bot_level_size_growth_bps | default(2500) }}"
+    liquidity_bot_maker_quantity_lots: "{{ and_chain_liquidity_bot_maker_quantity_lots | default(5000000) }}"
+    liquidity_bot_intent_ttl_ms: "{{ and_chain_liquidity_bot_intent_ttl_ms | default(600000) }}"
+    # RFC 056 delegated execution scopes now allow child lane policies to
+    # authorize intents on the delegation trading account. Keep this on by
+    # default for delegated demo-vault deploys; override false only when
+    # debugging shared-policy fallback behavior.
+    liquidity_bot_create_lane_policies: "{{ and_chain_liquidity_bot_create_lane_policies | default(liquidity_bot_use_demo_delegation) }}"
+    liquidity_bot_bootstrap_collateral_micro_usdc: >-
+      {{
+        and_chain_liquidity_bot_bootstrap_collateral_micro_usdc
+        | default(
+            (and_chain_real_capital_demo_initial_deposit_micro_usdc if liquidity_bot_use_demo_delegation else '0'),
+            true
+          )
+      }}
+    liquidity_bot_policy_max_volume_per_day_micro_usdc: "{{ and_chain_liquidity_bot_policy_max_volume_per_day_micro_usdc | default('1000000000000000000') }}"
+    liquidity_bot_intent_status_timeout_ms: "{{ and_chain_liquidity_bot_intent_status_timeout_ms | default(120000) }}"
+    liquidity_bot_cleanup_open_orders_on_start: "{{ and_chain_liquidity_bot_cleanup_open_orders_on_start | default(true) }}"
+    liquidity_bot_mm_program_enabled: "{{ and_chain_liquidity_bot_mm_program_enabled | default('1') }}"
+    liquidity_bot_mm_program_name: "{{ and_chain_liquidity_bot_mm_program_name | default('testnet-prime-mm') }}"
+    liquidity_bot_mm_min_quote_size_micro_usdc: "{{ and_chain_liquidity_bot_mm_min_quote_size_micro_usdc | default('1000000000000') }}"
+    liquidity_bot_mm_enrollment_bond_micro_usdc: "{{ and_chain_liquidity_bot_mm_enrollment_bond_micro_usdc | default('10000000000') }}"
+    liquidity_bot_operator_token: "{{ lookup('env', 'KOMBAT_OPERATOR_TOKEN') }}"
+  pre_tasks:
+    - name: Require operator token for demo liquidity bot RFC027 bootstrap
+      ansible.builtin.assert:
+        that:
+          - liquidity_bot_operator_token | length > 0
+        fail_msg: "Set KOMBAT_OPERATOR_TOKEN in the environment before deploying the liquidity bot."
+
+    - name: Require signed-intent credentials for demo liquidity bot
+      ansible.builtin.assert:
+        that:
+          - liquidity_bot_maker_owner_secret_hex | length == 64
+          - liquidity_bot_maker_session_secret_hex | length == 64
+        fail_msg: "Set 32-byte maker owner and session secret hex values before deploying the Rust MM bot."
+
+    - name: Check local kombat_mm_bot binary
+      ansible.builtin.stat:
+        path: "{{ liquidity_bot_binary_path }}"
+      delegate_to: localhost
+      become: false
+      register: local_liquidity_bot_binary
+      run_once: true
+
+    - name: Require local kombat_mm_bot binary
+      ansible.builtin.assert:
+        that:
+          - local_liquidity_bot_binary.stat.exists
+          - local_liquidity_bot_binary.stat.executable
+        fail_msg: "Build the Linux kombat_mm_bot binary and set KOMBAT_MM_BOT_BINARY_PATH."
+      run_once: true
+
+    - name: Read RFC049 demo vaults for delegated MM deployment
+      ansible.builtin.uri:
+        url: "{{ liquidity_bot_rpc_url }}"
+        method: POST
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_listVaults
+          params:
+            operator: "{{ liquidity_bot_maker_account_id }}"
+            include_unlisted: true
+            limit: 50
+          id: "list-rfc049-demo-vaults-for-mm-bot"
+        return_content: true
+        status_code: 200
+      register: liquidity_bot_demo_vaults
+      run_once: true
+      when:
+        - liquidity_bot_use_demo_delegation
+        - liquidity_bot_delegation_id_hex | length == 0
+      failed_when:
+        - liquidity_bot_demo_vaults.status != 200
+          or (liquidity_bot_demo_vaults.json.error is defined and liquidity_bot_demo_vaults.json.error is not none)
+
+    - name: Auto-discover RFC049 demo delegation for MM bot
+      ansible.builtin.set_fact:
+        liquidity_bot_delegation_id_hex: >-
+          {{
+            (
+              liquidity_bot_demo_vaults.json.result['items'] | default([])
+              | selectattr('details', 'defined')
+              | selectattr('details.delegation', 'defined')
+              | selectattr('details.delegation.agent', 'equalto', liquidity_bot_maker_account_id)
+              | selectattr('details.delegation.performance_share_units', 'equalto', and_chain_real_capital_demo_performance_share_units)
+              | selectattr('details.delegation.notice_period_ms', 'equalto', and_chain_real_capital_demo_notice_period_ms)
+              | selectattr('details.delegation.agent_bond', 'equalto', and_chain_real_capital_demo_agent_bond_micro_usdc)
+              | map(attribute='details.delegation.delegation_id_hex')
+              | list
+              | first
+            ) | default('')
+          }}
+      run_once: true
+      when:
+        - liquidity_bot_use_demo_delegation
+        - liquidity_bot_delegation_id_hex | length == 0
+
+    - name: Require RFC049 demo delegation before delegated MM deploy
+      ansible.builtin.assert:
+        that:
+          - liquidity_bot_delegation_id_hex | length > 0
+        fail_msg: "RFC049 demo delegation missing; run post-cluster real-capital seeding before deploying the delegated MM bot."
+      run_once: true
+      when: liquidity_bot_use_demo_delegation
+
+  tasks:
+    - name: Ensure bot install and config directories exist
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "{{ item.mode }}"
+      loop:
+        - path: "{{ liquidity_bot_install_dir }}"
+          mode: "0755"
+        - path: "{{ liquidity_bot_config_dir }}"
+          mode: "0755"
+
+    - name: Install Rust RFC027 market-maker bot binary
+      ansible.builtin.copy:
+        src: "{{ liquidity_bot_binary_path }}"
+        dest: "{{ liquidity_bot_install_dir }}/kombat_mm_bot"
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install perps demo liquidity bot environment
+      ansible.builtin.copy:
+        dest: "{{ liquidity_bot_env_file }}"
+        owner: root
+        group: root
+        mode: "0600"
+        content: |
+          KOMBAT_MM_BOT_RPC_URL={{ liquidity_bot_rpc_url }}
+          KOMBAT_MM_BOT_CHAIN_ID={{ liquidity_bot_chain_id }}
+          KOMBAT_MM_BOT_MARKET_IDS={{ liquidity_bot_market_ids }}
+          KOMBAT_MM_BOT_MAKER_ACCOUNT_ID={{ liquidity_bot_maker_account_id }}
+          {% if liquidity_bot_delegation_id_hex | length > 0 %}
+          KOMBAT_MM_BOT_DELEGATION_ID_HEX={{ liquidity_bot_delegation_id_hex }}
+          {% endif %}
+          KOMBAT_MM_BOT_MAKER_OWNER_SECRET_HEX={{ liquidity_bot_maker_owner_secret_hex }}
+          KOMBAT_MM_BOT_MAKER_SESSION_SECRET_HEX={{ liquidity_bot_maker_session_secret_hex }}
+          KOMBAT_MM_BOT_MAKER_POLICY_BASE_ID={{ liquidity_bot_maker_policy_base_id }}
+          KOMBAT_MM_BOT_QUOTE_INTERVAL_MS={{ liquidity_bot_quote_interval_ms }}
+          KOMBAT_MM_BOT_QUOTE_CONCURRENCY={{ liquidity_bot_quote_concurrency }}
+          KOMBAT_MM_BOT_INTENT_SUBMIT_DELAY_MS={{ liquidity_bot_intent_submit_delay_ms }}
+          KOMBAT_MM_BOT_QUOTE_REFRESH_EVERY_CYCLES={{ liquidity_bot_quote_refresh_every_cycles }}
+          KOMBAT_MM_BOT_QUOTE_REFRESH_PRICE_MOVE_BPS={{ liquidity_bot_quote_refresh_price_move_bps }}
+          KOMBAT_MM_BOT_SPREAD_BPS={{ liquidity_bot_spread_bps }}
+          KOMBAT_MM_BOT_LEVELS={{ liquidity_bot_quote_levels }}
+          KOMBAT_MM_BOT_LEVEL_STEP_BPS={{ liquidity_bot_level_step_bps }}
+          KOMBAT_MM_BOT_LEVEL_SIZE_GROWTH_BPS={{ liquidity_bot_level_size_growth_bps }}
+          KOMBAT_MM_BOT_BASE_QUANTITY_LOTS={{ liquidity_bot_maker_quantity_lots }}
+          KOMBAT_MM_BOT_INTENT_TTL_MS={{ liquidity_bot_intent_ttl_ms }}
+          KOMBAT_MM_BOT_CREATE_LANE_POLICIES={{ liquidity_bot_create_lane_policies | bool | lower }}
+          KOMBAT_MM_BOT_BOOTSTRAP_COLLATERAL_MICRO_USDC={{ liquidity_bot_bootstrap_collateral_micro_usdc }}
+          KOMBAT_MM_BOT_POLICY_MAX_VOLUME_PER_DAY_MICRO_USDC={{ liquidity_bot_policy_max_volume_per_day_micro_usdc }}
+          KOMBAT_MM_BOT_INTENT_STATUS_TIMEOUT_MS={{ liquidity_bot_intent_status_timeout_ms }}
+          KOMBAT_MM_BOT_CLEANUP_OPEN_ORDERS_ON_START={{ liquidity_bot_cleanup_open_orders_on_start | bool | lower }}
+          KOMBAT_MM_BOT_BOOTSTRAP_RFC027={{ liquidity_bot_mm_program_enabled | bool | lower }}
+          KOMBAT_MM_BOT_MM_PROGRAM_NAME={{ liquidity_bot_mm_program_name }}
+          KOMBAT_MM_BOT_MM_MIN_QUOTE_SIZE_MICRO_USDC={{ liquidity_bot_mm_min_quote_size_micro_usdc }}
+          KOMBAT_MM_BOT_MM_ENROLLMENT_BOND_MICRO_USDC={{ liquidity_bot_mm_enrollment_bond_micro_usdc }}
+          KOMBAT_OPERATOR_TOKEN={{ liquidity_bot_operator_token | to_json }}
+
+    - name: Install perps demo liquidity bot service
+      ansible.builtin.template:
+        src: ../templates/kombat-perps-demo-liquidity-bot.service.j2
+        dest: "/etc/systemd/system/{{ liquidity_bot_service_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Enable perps demo liquidity bot service
+      ansible.builtin.systemd_service:
+        name: "{{ liquidity_bot_service_name }}.service"
+        daemon_reload: true
+        enabled: true
+        state: restarted

@@ -1,0 +1,29 @@
+[package]
+name = "kombat-chain-execution"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[lib]
+name = "kombat_chain_execution"
+path = "src/lib.rs"
+
+[dependencies]
+alloy-consensus = { version = "1.0.23", features = ["secp256k1"] }
+alloy-eips = "1.0.23"
+borsh = { version = "1.6.1", features = ["derive"] }
+kombat-chain-consensus = { path = "../consensus" }
+kombat-chain-matching = { path = "../matching" }
+kombat-chain-oracle = { path = "../oracle" }
+kombat-chain-policy = { path = "../policy" }
+kombat-chain-state-db = { path = "../state-db" }
+revm = "36.0.0"
+sha2 = "0.10.9"
+
+[dev-dependencies]
+ed25519-dalek = "2.1.1"
+secp256k1 = { version = "0.30", features = ["global-context", "recovery"] }
+
+[lints]
+workspace = true

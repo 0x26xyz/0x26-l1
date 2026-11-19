@@ -1,0 +1,68 @@
+- name: Enable network submit forwarding on live testnet services
+  hosts: kombat_live_testnet
+  gather_facts: false
+  become: true
+  vars:
+    validator_service_name: "{{ and_chain_validator_service_name | default('kombat-chain') }}"
+    validator_env_file: "{{ and_chain_validator_env_file | default(validator_service_name ~ '.env') }}"
+    validator_services: "{{ [validator_service_name] + (and_chain_ingress_services | map(attribute='name') | list) }}"
+    forwarding_line: "KOMBAT_NETWORK_SUBMIT_FORWARDING_ENABLED={{ and_chain_network_submit_forwarding_enabled | default(false) | bool | ternary('1', '0') }}"
+  tasks:
+    - name: Set validator network submit forwarding env
+      ansible.builtin.lineinfile:
+        path: "{{ and_chain_config_dir }}/{{ validator_env_file }}"
+        regexp: "^KOMBAT_NETWORK_SUBMIT_FORWARDING_ENABLED="
+        line: "{{ forwarding_line }}"
+        create: false
+      notify: Restart chain services
+
+    - name: Set ingress network submit forwarding env
+      ansible.builtin.lineinfile:
+        path: "{{ and_chain_config_dir }}/{{ ingress.name }}.env"
+        regexp: "^KOMBAT_NETWORK_SUBMIT_FORWARDING_ENABLED="
+        line: "{{ forwarding_line }}"
+        create: false
+      loop: "{{ and_chain_ingress_services }}"
+      loop_control:
+        loop_var: ingress
+      notify: Restart chain services
+
+    - name: Apply forwarding env restarts
+      ansible.builtin.meta: flush_handlers
+
+    - name: Wait for validator RPC after forwarding update
+      ansible.builtin.shell: |
+        set -euo pipefail
+        curl --max-time 3 -sS -H 'content-type: application/json' \
+          --data '{"jsonrpc":"2.0","method":"kombat_chainInfo","params":{},"id":1}' \
+          http://127.0.0.1:{{ and_chain_validator_rpc_port }} | grep -q '"result"'
+      args:
+        executable: /bin/bash
+      register: forwarding_validator_rpc_check
+      changed_when: false
+      retries: 20
+      delay: 2
+      until: forwarding_validator_rpc_check.rc == 0
+
+    - name: Wait for ingress RPC ports after forwarding update
+      ansible.builtin.shell: |
+        set -euo pipefail
+        curl --max-time 3 -sS -H 'content-type: application/json' \
+          --data '{"jsonrpc":"2.0","method":"kombat_chainInfo","params":{},"id":1}' \
+          http://127.0.0.1:{{ item.port }} | grep -q '"result"'
+      args:
+        executable: /bin/bash
+      register: forwarding_ingress_rpc_check
+      changed_when: false
+      retries: 20
+      delay: 2
+      until: forwarding_ingress_rpc_check.rc == 0
+      loop: "{{ and_chain_ingress_services }}"
+
+  handlers:
+    - name: Restart chain services
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: restarted
+        daemon_reload: true
+      loop: "{{ validator_services }}"

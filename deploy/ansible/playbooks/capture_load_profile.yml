@@ -1,0 +1,165 @@
+- name: Capture Kombat live testnet profile during a load window
+  hosts: kombat_live_testnet
+  gather_facts: true
+  become: true
+  vars:
+    chain_services: "{{ ['kombat-chain'] + (and_chain_ingress_services | map(attribute='name') | list) }}"
+    local_profile_dir: "{{ lookup('env', 'KOMBAT_PROFILE_DIR') | default('/tmp/and-live-load-profile-' + lookup('pipe', 'date -u +%Y%m%dT%H%M%SZ'), true) }}"
+    profile_secs: "{{ lookup('env', 'KOMBAT_PROFILE_SECS') | default('105', true) | int }}"
+    profile_interval_secs: "{{ lookup('env', 'KOMBAT_PROFILE_INTERVAL_SECS') | default('2', true) | int }}"
+    remote_profile_dir: "/tmp/kombat-load-profile-{{ inventory_hostname }}"
+    remote_profile_tar: "/tmp/kombat-load-profile-{{ inventory_hostname }}.tgz"
+  tasks:
+    - name: Ensure local profile directory exists
+      ansible.builtin.file:
+        path: "{{ local_profile_dir }}"
+        state: directory
+        mode: "0755"
+      delegate_to: localhost
+      become: false
+      run_once: true
+
+    - name: Reset remote profile directory
+      ansible.builtin.file:
+        path: "{{ remote_profile_dir }}"
+        state: absent
+
+    - name: Prepare remote profile directory
+      ansible.builtin.file:
+        path: "{{ remote_profile_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Capture load-window samples
+      ansible.builtin.shell: |
+        set -euo pipefail
+
+        out="{{ remote_profile_dir }}"
+        samples="$out/samples"
+        mkdir -p "$samples"
+
+        {
+          echo "captured_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "inventory_hostname={{ inventory_hostname }}"
+          echo "ansible_host={{ ansible_host | default(inventory_hostname) }}"
+          echo "profile_secs={{ profile_secs }}"
+          echo "profile_interval_secs={{ profile_interval_secs }}"
+          echo "uname=$(uname -a)"
+          echo
+          echo "## lscpu"
+          lscpu || true
+          echo
+          echo "## free -m"
+          free -m || true
+          echo
+          echo "## selected sysctl"
+          sysctl \
+            fs.file-max \
+            net.core.rmem_max \
+            net.core.wmem_max \
+            net.core.somaxconn \
+            net.core.netdev_max_backlog \
+            net.ipv4.ip_local_port_range \
+            net.ipv4.tcp_fin_timeout \
+            net.ipv4.tcp_tw_reuse 2>/dev/null || true
+          echo
+          echo "## service sha"
+          sha256sum "{{ and_chain_install_root }}/bin/kombat_chain" || true
+          echo
+          echo "## service env hashes"
+          sha256sum {{ and_chain_config_dir }}/*.env 2>/dev/null || true
+          echo
+          echo "## validator-set hash"
+          sha256sum "{{ and_chain_config_dir }}/validator-set.toml" 2>/dev/null || true
+        } > "$out/static.txt"
+
+        end=$((SECONDS + {{ profile_secs }}))
+        idx=0
+        while [ "$SECONDS" -lt "$end" ]; do
+          ts="$(date -u +%Y%m%dT%H%M%SZ)"
+          sample="$samples/$(printf '%04d' "$idx")-${ts}.txt"
+          {
+            echo "sample_index=$idx"
+            echo "sample_utc=$ts"
+            echo
+            echo "## uptime"
+            uptime || true
+            echo
+            echo "## proc loadavg"
+            cat /proc/loadavg || true
+            echo
+            echo "## proc stat"
+            cat /proc/stat || true
+            echo
+            echo "## vmstat"
+            vmstat 1 2 | tail -n 1 || true
+            echo
+            echo "## mpstat summary"
+            mpstat 1 1 2>/dev/null || true
+            echo
+            echo "## kombat_chain processes"
+            ps -eo pid,ppid,cls,pri,ni,psr,pcpu,pmem,rss,vsz,etime,comm,args --sort=-pcpu \
+              | awk 'NR == 1 || /kombat_chain/' || true
+            echo
+            echo "## loadgen processes"
+            ps -eo pid,ppid,cls,pri,ni,psr,pcpu,pmem,rss,vsz,etime,comm,args --sort=-pcpu \
+              | awk 'NR == 1 || /kombat_loadgen|loadgen/' || true
+            echo
+            echo "## top processes"
+            ps -eo pid,ppid,cls,pri,ni,psr,pcpu,pmem,rss,vsz,etime,comm,args --sort=-pcpu \
+              | head -n 120 || true
+            echo
+            echo "## top kombat_chain threads"
+            ps -eLo pid,tid,psr,pcpu,pmem,comm,args --sort=-pcpu \
+              | awk 'NR == 1 || /kombat_chain/' \
+              | head -n 120 || true
+            echo
+            echo "## top loadgen threads"
+            ps -eLo pid,tid,psr,pcpu,pmem,comm,args --sort=-pcpu \
+              | awk 'NR == 1 || /kombat_loadgen|loadgen/' \
+              | head -n 120 || true
+            echo
+            echo "## service cpu"
+            for svc in {{ chain_services | join(' ') }}; do
+              systemctl show "$svc" --property=CPUUsageNSec,NRestarts,TasksCurrent,ActiveState,SubState --no-pager || true
+            done
+            echo
+            echo "## sockets summary"
+            ss -s || true
+            echo
+            echo "## listening chain ports"
+            ss -lntp | egrep ':(8545|8645|8646|8647|8648|8649|8650)' || true
+            echo
+            echo "## established chain sockets"
+            ss -antp | egrep ':(8545|8645|8646|8647|8648|8649|8650)' | head -n 200 || true
+            echo
+            echo "## softirqs"
+            cat /proc/softirqs || true
+            echo
+            echo "## net dev"
+            cat /proc/net/dev || true
+            echo
+            echo "## ip link stats"
+            ip -s link || true
+            echo
+            echo "## snmp"
+            cat /proc/net/snmp || true
+          } > "$sample"
+          idx=$((idx + 1))
+          sleep "{{ profile_interval_secs }}"
+        done
+
+        tar -C "$out" -czf "{{ remote_profile_tar }}" .
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Fetch load profile archive
+      ansible.builtin.fetch:
+        src: "{{ remote_profile_tar }}"
+        dest: "{{ local_profile_dir }}/{{ inventory_hostname }}.tgz"
+        flat: true
+
+    - name: Print profile location
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} profile fetched to {{ local_profile_dir }}/{{ inventory_hostname }}.tgz"

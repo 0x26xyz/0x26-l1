@@ -1,0 +1,17 @@
+# Experiment 252: six ingress services per host. The benchmark uses the six
+# ports on validator-2 and validator-3 only, keeping all four hosts as
+# validators but moving ingress traffic onto the hosts that hit target in item
+# 251.
+and_chain_ingress_services:
+  - name: kombat-chain-ingress
+    port: 8645
+  - name: kombat-chain-ingress2
+    port: 8646
+  - name: kombat-chain-ingress3
+    port: 8647
+  - name: kombat-chain-ingress4
+    port: 8648
+  - name: kombat-chain-ingress5
+    port: 8649
+  - name: kombat-chain-ingress6
+    port: 8650

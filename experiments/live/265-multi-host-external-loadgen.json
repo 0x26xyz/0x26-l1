@@ -1,0 +1,107 @@
+{
+  "id": 265,
+  "name": "multi-host-external-loadgen",
+  "status": "kept diagnostic; not green",
+  "date": "2026-04-27",
+  "base_results": [
+    {
+      "decision_log_item": 264,
+      "committed_tps": 51118.0,
+      "artifact": "/tmp/and-live-264b-external-pipeline4-nostrict-100k-60s",
+      "finding": "single external loadgen host capped at ~47k measured RPS at depth 4; validators under-driven"
+    }
+  ],
+  "hypothesis": "A single external loadgen host cannot drive 100k offered RPS across 12 endpoints because 12 concurrent kombat_loadgen processes contend for CPU. Distributing the 12 endpoints across 4 external loadgen hosts (3 endpoints each) should let each host's loadgen processes run without CPU contention, delivering the full 100k offered load to the validators.",
+  "files": [
+    "chain/scripts/loadtest_live_network_multi_ingress.sh",
+    "chain/experiments/live/265-multi-host-external-loadgen.json",
+    "chain/THROUGHPUT_DECISION_LOG.md"
+  ],
+  "git_environment_anchors": {
+    "plan_tag": "chain-exp-265-multi-host-external-loadgen-plan",
+    "result_tag": "chain-exp-265-multi-host-external-loadgen-result",
+    "validator_binary_sha256": "dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd",
+    "loadgen_binary_sha256": "e5a6927cbf30e1abb0c580b1461fe198498e14b310c67af9ea7757211fcb01ef",
+    "inventory": "chain/deploy/ansible/inventory/testnet.yml"
+  },
+  "topology": {
+    "validators": {
+      "v1": "203.0.113.15",
+      "v2": "203.0.113.17",
+      "v3": "203.0.113.14",
+      "v4": "203.0.113.16"
+    },
+    "external_loadgen_hosts": [
+      "root@203.0.113.10",
+      "root@203.0.113.12",
+      "root@203.0.113.18",
+      "root@203.0.113.11"
+    ],
+    "endpoints_per_host": 3,
+    "ssh_key": "~/.ssh/id_n2_ssh"
+  },
+  "planned_commands": [
+    "Verify validator binary/config: KOMBAT_BINARY_PATH=/tmp/kombat_chain-live-dd022982 KOMBAT_OPERATOR_TOKEN=... ansible-playbook playbooks/verify.yml",
+    "Reset state: KOMBAT_OPERATOR_TOKEN=... ansible-playbook playbooks/reset_state.yml",
+    "Copy loadgen binary to all 4 hosts: for host in root@203.0.113.10 root@203.0.113.12 root@203.0.113.18 root@203.0.113.11; do scp -i ~/.ssh/id_n2_ssh chain/target-linux-x86_64/release/kombat_loadgen ${host}:/tmp/kombat_loadgen; done",
+    "Verify SSH to all 4 hosts works",
+    "Run: LOADTEST_EXTERNAL_RUNNER_HOSTS='root@203.0.113.10 root@203.0.113.12 root@203.0.113.18 root@203.0.113.11' LOADTEST_WRITERS_JSON=/tmp/and-live-261-rebuilt-v4-default-100k-60s/writers-all.json LOADTEST_OUTPUT_DIR=/tmp/and-live-265-multi-host-external-loadgen-100k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=4 LOADTEST_STRICT_NONCE_RETRY=0 LOADTEST_FAIL_ON_ERRORS=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 100000 60",
+    "Verify correctness: bash chain/scripts/live_network_status.sh, curl kombat_getConsensusMetrics and kombat_getStateRootAtHeight on all four validators",
+    "Cleanup: for host in root@203.0.113.10 root@203.0.113.12 root@203.0.113.18 root@203.0.113.11; do ssh -i ~/.ssh/id_n2_ssh ${host} 'rm -f /tmp/kombat_loadgen'; done"
+  ],
+  "success_criteria": {
+    "committed_tps_green_floor": 76000,
+    "zero_rpc_errors": true,
+    "zero_nonce_errors": true,
+    "zero_network_errors": true,
+    "common_height_state_roots_match": true,
+    "mahi_commit_logs_match": true,
+    "loadgen_binaries_removed_after_run": true
+  },
+  "decision": {
+    "status": "planned",
+    "next_move": "Commit/tag/push the plan, verify SSH to all 4 hosts, copy loadgen binary, verify validators, reset state, run the profiled multi-host external loadgen replay."
+  },
+  "result": {
+    "artifact": "/tmp/and-live-265-multi-host-external-loadgen-100k-60s",
+    "duration_secs": 60,
+    "committed_total": 2309095,
+    "committed_tps": 38484.9,
+    "phase6_items": 4911288,
+    "measured_rps_total": 78459.4,
+    "rpc_err_total": 0,
+    "nonce_err_total": 0,
+    "net_err_total": 0,
+    "endpoint_rps": {
+      "validator-1": [
+        3295.2,
+        3126.9,
+        3199.9
+      ],
+      "validator-2": [
+        7374.8,
+        7571.5,
+        6776.5
+      ],
+      "validator-3": [
+        8175.1,
+        8336.8,
+        8312.4
+      ],
+      "validator-4": [
+        7182.7,
+        7311.1,
+        7796.5
+      ]
+    },
+    "common_height_state_root": {
+      "height": 100,
+      "block_hash_hex": "0x1a047db04d38c2ff89709663bd1133fc5ffcc0b4c53f125076cd82b180ca50b3",
+      "state_root_hex": "0xefa2cee2343dd17176078f400a7533906cb144622ecb78eaae5bc0052393fba3",
+      "matched_all_validators": true
+    },
+    "head_hash_at_253": "0xad92a557e97d680d42593298e44b20c310037899780b30319bb38cd4868542c9",
+    "pre_admitted_pools_drained": true,
+    "classification": "Multi-host external loadgen delivers 78,459 measured RPS, a 67% improvement over single-host 264b (46,907). All 4 loadgen hosts contributed. Delivery is balanced across v2/v3/v4 (7.2-8.3k RPS) but v1 remains bottlenecked at ~3.2k RPS/endpoint. The load delivery side is working \u2014 the remaining gap to 77k TPS is now validator-side, specifically validator-1."
+  }
+}

@@ -1,0 +1,174 @@
+{
+  "title": "0x26 Chain execution cases",
+  "prepared_on": "2026-11-16",
+  "cases": [
+    {
+      "case": "Execution grouping",
+      "date": "2026-04-26",
+      "source_record": 217,
+      "observations": "Matching DAG commit-log hashes and block and intent counts accompanied different execution roots. The first different root was recorded at height 171.",
+      "partial_flush_condition": "If verified_count equals local pending_queue_length, drain the full verified prefix; otherwise drain only a multiple of the batch size.",
+      "replacement_rule": "Drain verified_count - (verified_count % batch_size), then execute groups of batch_size.",
+      "assumptions": [
+        "Common decided sequence.",
+        "Common execution-group starting boundary.",
+        "Common batch size.",
+        "Common replay inputs."
+      ],
+      "header_root": "SHA256(parent_root || body_root || event_root || round_le || timestamp_ms_le)",
+      "patch": "c773b0f5cd5e15999c3f332ae16df5e38b496961",
+      "replacement": "808f5b29a40cab1358211a9018b6b1525bc8112e",
+      "illustration": "At batch size eight, one replica can flush two groups of four while another executes one group of eight. This is an illustrative schedule, not a recovered runtime trace."
+    },
+    {
+      "case": "Oracle replay",
+      "date": "2026-05-04",
+      "source_record": "chain/experiments/live/280-mahi-oracle-price-consensus-gap.json",
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "source_sha256": "3cf421209e8103f7acc534e4a48e6dc5e675b95af9da10b65a2084ea80ca3e73",
+      "input_gap": "Replay used independent local mark and index prices. Price differences could change order acceptance.",
+      "mechanism": "Carry oracle observations in the signed payload and derive replay maps from those observations.",
+      "merged_selection": "Select the newest timestamp per market and price kind.",
+      "compatibility_path": "An empty observation payload falls back to local maps.",
+      "regression_shapes": [
+        "Different local oracle maps, same pinned payload.",
+        "Fresh observation followed by a stale observation in a merged body."
+      ],
+      "other_input_coverage": "Direct cancel and replace operations require coverage by the replicated-input contract."
+    }
+  ],
+  "partition_lemma": {
+    "statement": "For a common sequence S, starting offset o, and fixed b > 0, FIFO drains of multiples of b emit group j = S[o+jb:o+(j+1)b].",
+    "proof": "After k groups, the consumed offset is o+kb. A drain of m groups emits exactly the next m consecutive groups and advances the offset to o+(k+m)b. Induction establishes the claim. A stall emits no group.",
+    "scope": "Agreement for common successfully executed group indices, within one common execution segment. Equal wall-clock progress is not required."
+  },
+  "restart_analysis": {
+    "boundary_round": "max(head.round+1, current_round, 1)",
+    "rebuilt_state": [
+      "Fresh DagState",
+      "Fresh Linearizer",
+      "Empty pending_execution queue"
+    ],
+    "durable_offset": "No consumed Mahi-sequence offset or batch-size version is stored in CommitMeta or the engine snapshot.",
+    "scope": "A common fresh segment requires boundary agreement. Staggered restart and catch-up are not covered by the within-segment lemma.",
+    "tail_blocks": "The restarted replica discards volatile DAG and pending-execution references. No stored DAG-tail replay restores the same blocks. Below-boundary blocks are rejected.",
+    "payload_recovery": {
+      "admitted_wal": "Restore admitted intents from mempool WAL, prune already-consumed nonces, then eligible requests can be proposed in new DAG blocks.",
+      "pre_admitted_only": "The process-local pool removes requests on producer drain. No guaranteed local recovery exists for payloads held only there or in the volatile DAG.",
+      "conclusion": "Request recovery is conditional on retained admission state. It does not restore the original DAG blocks or grouping."
+    },
+    "quorum_three": "A missing validator stalls new prior-round quorum formation. It does not stop already-queued execution or certify a common restart segment.",
+    "local_reset_timeout_seconds": 30
+  },
+  "tail_analysis": {
+    "deployed_idle_empty_rounds": true,
+    "logical_round_interval_ms": 1000,
+    "drive_interval_ms": 250,
+    "non_test_idle_default": false,
+    "additional_blocks_needed": "b-r for 0 < r < b",
+    "conditional_wait_bound": "(b-r)*Delta + E, assuming a bound Delta on additions to the ordered verified prefix and E on completion execution.",
+    "hard_wall_clock_bound_established": false
+  },
+  "oracle_trust": {
+    "signer": "Mahi block author",
+    "conversion_checks": [
+      "price_ticks > 0",
+      "timestamp_ms > 0"
+    ],
+    "selection": "Newest timestamp; >= replaces the earlier equal-timestamp observation.",
+    "cross_validator_aggregation": "This replay path has no validator median or oracle quorum check.",
+    "threat": "A Byzantine block author can supply a false positive price with a newer timestamp. Ordering the input does not establish its truth.",
+    "assumption": "Trusted operator price inputs."
+  },
+  "implementation_excerpts": [
+    {
+      "path": "chain/crates/rpc/src/lib.rs",
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "source_file_sha256": "d21df46e7998f83210296d182021702f8caf0ebf26f9cec534892955c6663989",
+      "function": "drain_ready_execution_for_batch",
+      "code": "    fn drain_ready_execution_for_batch(&mut self, execution_batch_size: usize) -> Vec<MahiBlock> {\n        let execution_batch_size = execution_batch_size.max(1);\n        if execution_batch_size == 1 {\n            return self.drain_ready_execution();\n        }\n\n        let mut verified = 0_usize;\n        for block in &self.pending_execution {\n            let status = self\n                .verification_status\n                .get(&block.block_ref())\n                .copied()\n                .unwrap_or(MahiBlockVerificationStatus::Pending);\n            if status != MahiBlockVerificationStatus::Verified {\n                break;\n            }\n            verified = verified.saturating_add(1);\n        }\n\n        let executable = verified - (verified % execution_batch_size);\n        let mut ready = Vec::with_capacity(executable);\n        for _ in 0..executable {\n            if let Some(block) = self.pending_execution.pop_front() {\n                ready.push(block);\n            }\n        }\n        ready\n    }\n"
+    },
+    {
+      "path": "chain/crates/rpc/src/mahi_helpers.rs",
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "source_file_sha256": "15658e44a788caf816446241c299399a1738de7f54e10a67b453cb6308f62992",
+      "function": "mahi_restart_boundary_round_from_head",
+      "code": "pub(crate) fn mahi_restart_boundary_round_from_head(head: &kombat_chain_node::HeadSnapshot) -> u64 {\n    head.head_round\n        .saturating_add(1)\n        .max(head.current_round)\n        .max(1)\n}\n"
+    },
+    {
+      "path": "chain/crates/rpc/src/server_mahi.rs",
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "source_file_sha256": "5dea2ed7b80fe37aa942b6586483eb25863b2f1cd4ff968eb2a816e18664424b",
+      "function": "reset_mahi_state_after_engine_repair",
+      "code": "    pub(super) fn reset_mahi_state_after_engine_repair(&self, restart_boundary_round: u64) {\n        let Some(network_bootstrap) = self.config.network_bootstrap.as_ref() else {\n            return;\n        };\n        let rebuilt = build_mahi_state(\n            self.config.mahi_enabled,\n            Some(network_bootstrap),\n            parse_mahi_commit_rule(),\n            restart_boundary_round,\n        );\n        if let Ok(mut state_guard) = self.mahi_state.lock() {\n            *state_guard = rebuilt;\n        }\n    }\n"
+    },
+    {
+      "path": "chain/crates/node/src/engine_runtime.rs",
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "source_file_sha256": "16d4f111bfd4e3633c997acd85b652e505cd144ff61c613acb81fc3b5a478c00",
+      "function": "phase6_inplace_resting_commit_enabled",
+      "code": "pub(super) fn phase6_inplace_resting_commit_enabled() -> bool {\n    static ENABLED: OnceLock<bool> = OnceLock::new();\n    *ENABLED.get_or_init(|| {\n        std::env::var(PHASE6_INPLACE_RESTING_COMMIT_ENV)\n            .map(|value| value != \"0\" && !value.eq_ignore_ascii_case(\"false\"))\n            .unwrap_or(true)\n    })\n}\n"
+    },
+    {
+      "path": "chain/crates/node/src/engine_market_state.rs",
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "source_file_sha256": "64b16689416ecde2c334608fe883f2250d76c09639b25b6e5fbe0f4eb48cc6e0",
+      "function": "oracle_price_maps_for_mahi_block",
+      "code": "    pub(super) fn oracle_price_maps_for_mahi_block(\n        &self,\n        oracle_prices: &[BlockOraclePrice],\n    ) -> (BTreeMap<u64, OraclePrice>, BTreeMap<u64, OraclePrice>) {\n        if oracle_prices.is_empty() {\n            return (self.market_marks.clone(), self.market_index_prices.clone());\n        }\n        oracle_price_maps_from_block_observations(oracle_prices)\n    }\n"
+    },
+    {
+      "path": "chain/crates/node/src/engine_runtime_helpers.rs",
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "source_file_sha256": "d7a65af69344f7b09565dd08fbb79501a9e15f1c9d2dc8658c4b345299d5cab2",
+      "function": "oracle_price_from_block_value",
+      "code": "pub(super) fn oracle_price_from_block_value(value: BlockOracleValue) -> Option<OraclePrice> {\n    (value.price_ticks > 0 && value.timestamp_ms > 0).then_some(OraclePrice {\n        price_ticks: value.price_ticks,\n        timestamp_ms: value.timestamp_ms,\n    })\n}\n"
+    },
+    {
+      "path": "chain/crates/node/src/engine_runtime_helpers.rs",
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "source_file_sha256": "d7a65af69344f7b09565dd08fbb79501a9e15f1c9d2dc8658c4b345299d5cab2",
+      "function": "insert_newer_oracle_price",
+      "code": "pub(super) fn insert_newer_oracle_price(\n    prices: &mut BTreeMap<u64, OraclePrice>,\n    market_id: u64,\n    price: OraclePrice,\n) {\n    let should_insert = prices\n        .get(&market_id)\n        .is_none_or(|existing| price.timestamp_ms >= existing.timestamp_ms);\n    if should_insert {\n        prices.insert(market_id, price);\n    }\n}\n"
+    },
+    {
+      "path": "chain/crates/rpc/src/submit_queues.rs",
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "source_file_sha256": "bec6544205e4e30414391dda663a09113a4ec6c444389ee306c3f2a70b0bc4a6",
+      "function": "drain_for_block",
+      "code": "    pub(crate) fn drain_for_block(\n        &mut self,\n        timestamp_ms: u64,\n        max_items: usize,\n        policy_next_nonces: &BTreeMap<u64, u64>,\n        inflight_policy_nonces: &BTreeMap<u64, BTreeSet<u64>>,\n        excluded_intents: &BTreeSet<IntentId>,\n    ) -> Vec<SignedIntent> {\n        if max_items == 0 || self.by_intent.is_empty() {\n            return Vec::new();\n        }\n\n        let mut selected = Vec::with_capacity(max_items);\n        let mut stale = Vec::new();\n        let mut last_selected_policy = None;\n        let policy_ids = self.rotated_policy_ids();\n        let mut expected_nonces = policy_ids\n            .iter()\n            .map(|policy_id| {\n                let mut expected_nonce = policy_next_nonces.get(policy_id).copied().unwrap_or(1);\n                if let Some(inflight_nonces) = inflight_policy_nonces.get(policy_id) {\n                    while inflight_nonces.contains(&expected_nonce) {\n                        expected_nonce = expected_nonce.saturating_add(1);\n                    }\n                }\n                (*policy_id, expected_nonce)\n            })\n            .collect::<BTreeMap<_, _>>();\n        let mut exhausted = BTreeSet::new();\n\n        while selected.len() < max_items && exhausted.len() < policy_ids.len() {\n            let mut made_progress = false;\n            for policy_id in policy_ids.iter().copied() {\n                if selected.len() >= max_items {\n                    break;\n                }\n                if exhausted.contains(&policy_id) {\n                    continue;\n                }\n                let Some(expected_nonce) = expected_nonces.get_mut(&policy_id) else {\n                    exhausted.insert(policy_id);\n                    continue;\n                };\n\n                let next = self.by_policy_nonce.get(&policy_id).and_then(|by_nonce| {\n                    by_nonce\n                        .range(*expected_nonce..)\n                        .next()\n                        .map(|(nonce, intent_id)| (*nonce, *intent_id))\n                });\n                let Some((nonce, candidate_intent_id)) = next else {\n                    exhausted.insert(policy_id);\n                    continue;\n                };\n                if nonce > *expected_nonce {\n                    exhausted.insert(policy_id);\n                    continue;\n                }\n                if excluded_intents.contains(&candidate_intent_id) {\n                    stale.push(candidate_intent_id);\n                    *expected_nonce = expected_nonce.saturating_add(1);\n                    made_progress = true;\n                    continue;\n                }\n                let Some(candidate) = self.by_intent.get(&candidate_intent_id) else {\n                    stale.push(candidate_intent_id);\n                    *expected_nonce = expected_nonce.saturating_add(1);\n                    made_progress = true;\n                    continue;\n                };\n                if intent_expires_at_ms(&candidate.signed_intent.intent) <= timestamp_ms {\n                    stale.push(candidate_intent_id);\n                    *expected_nonce = expected_nonce.saturating_add(1);\n                    made_progress = true;\n                    continue;\n                }\n\n                selected.push(candidate_intent_id);\n                *expected_nonce = expected_nonce.saturating_add(1);\n                last_selected_policy = Some(policy_id);\n                made_progress = true;\n            }\n\n            if !made_progress {\n                break;\n            }\n        }\n\n        if let Some(last_selected_policy) = last_selected_policy {\n            let next_cursor = policy_ids\n                .iter()\n                .position(|policy_id| *policy_id == last_selected_policy)\n                .map(|index| policy_ids[(index + 1) % policy_ids.len()]);\n            self.next_policy_cursor = next_cursor;\n        }\n\n        for intent_id in stale {\n            if self.remove_intent(&intent_id).is_some() {\n                self.dropped_stale_total = self.dropped_stale_total.saturating_add(1);\n            }\n        }\n\n        let mut drained = Vec::with_capacity(selected.len());\n        for intent_id in selected {\n            if let Some(intent) = self.remove_intent(&intent_id) {\n                self.drained_total = self.drained_total.saturating_add(1);\n                drained.push(intent.signed_intent);\n            }\n        }\n        drained\n    }\n"
+    },
+    {
+      "path": "chain/crates/rpc/src/lib.rs",
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "source_file_sha256": "d21df46e7998f83210296d182021702f8caf0ebf26f9cec534892955c6663989",
+      "function": "requeue_execution_front",
+      "code": "    fn requeue_execution_front(&mut self, blocks: Vec<MahiBlock>) {\n        for block in blocks.into_iter().rev() {\n            self.pending_execution.push_front(block);\n        }\n        self.last_update_at = Some(Instant::now());\n    }\n"
+    },
+    {
+      "path": "chain/crates/rpc/src/lib.rs",
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "source_file_sha256": "d21df46e7998f83210296d182021702f8caf0ebf26f9cec534892955c6663989",
+      "function": "validate_block_restart_boundary",
+      "code": "    fn validate_block_restart_boundary(&self, block: &MahiBlock) -> Result<(), String> {\n        if block.round < self.restart_boundary_round {\n            return Err(format!(\n                \"mahi block round {} below local restart boundary {}\",\n                block.round, self.restart_boundary_round\n            ));\n        }\n        if block.round == self.restart_boundary_round {\n            if block.ancestors.is_empty() {\n                return Ok(());\n            }\n            return Err(format!(\n                \"mahi restart-boundary block round {} must not carry ancestors\",\n                block.round\n            ));\n        }\n        if block\n            .ancestors\n            .iter()\n            .any(|ancestor| ancestor.round < self.restart_boundary_round)\n        {\n            return Err(format!(\n                \"mahi block round {} references ancestor below local restart boundary {}\",\n                block.round, self.restart_boundary_round\n            ));\n        }\n        block\n            .validate_ancestor_rules(self.validator_count())\n            .map_err(|error| format!(\"mahi block ancestor rules invalid: {error:?}\"))\n    }\n"
+    },
+    {
+      "path": "chain/crates/node/src/persistence.rs",
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "source_file_sha256": "4803767fa96d2d91d8a2349f6f9365de92787ce537af8e3f39af7580dbc01081",
+      "function": "prune_committed_intent_wal_replay",
+      "code": "fn prune_committed_intent_wal_replay(inner: &mut PersistedSingleNodeEngineSnapshot) {\n    let stale_direct_keys = inner\n        .intent_mempool\n        .intents_by_order\n        .iter()\n        .filter_map(|(key, signed_intent)| {\n            let committed_next_nonce = inner\n                .policy_store\n                .next_intent_nonce(signed_intent.intent.policy_id)\n                .ok()?;\n            (signed_intent.intent.nonce < committed_next_nonce).then_some(*key)\n        })\n        .collect::<Vec<_>>();\n    for key in stale_direct_keys {\n        inner.intent_mempool.intents_by_order.remove(&key);\n    }\n    inner.intent_mempool.known_intents = inner\n        .intent_mempool\n        .intents_by_order\n        .values()\n        .map(intent_id)\n        .collect();\n\n    let stale_conditional_keys = inner\n        .conditional_pool\n        .time_after_by_order\n        .iter()\n        .filter_map(|(key, signed_intent)| {\n            let committed_next_nonce = inner\n                .policy_store\n                .next_intent_nonce(signed_intent.intent.policy_id)\n                .ok()?;\n            (signed_intent.intent.nonce < committed_next_nonce).then_some(*key)\n        })\n        .collect::<Vec<_>>();\n    for key in stale_conditional_keys {\n        inner.conditional_pool.time_after_by_order.remove(&key);\n    }\n\n    let mut queued_policy_nonces = BTreeSet::new();\n    let duplicate_direct_keys = inner\n        .intent_mempool\n        .intents_by_order\n        .iter()\n        .filter_map(|(key, signed_intent)| {\n            if key.intent_id != intent_id(signed_intent)\n                || key.policy_id != signed_intent.intent.policy_id\n                || key.nonce != signed_intent.intent.nonce\n            {\n                return None;\n            }\n            let policy_nonce = (signed_intent.intent.policy_id, signed_intent.intent.nonce);\n            (!queued_policy_nonces.insert(policy_nonce)).then_some(*key)\n        })\n        .collect::<Vec<_>>();\n    for key in duplicate_direct_keys {\n        inner.intent_mempool.intents_by_order.remove(&key);\n    }\n\n    let duplicate_conditional_keys = inner\n        .conditional_pool\n        .time_after_by_order\n        .iter()\n        .filter_map(|(key, signed_intent)| {\n            if key.order_key.intent_id != intent_id(signed_intent)\n                || key.order_key.policy_id != signed_intent.intent.policy_id\n                || key.order_key.nonce != signed_intent.intent.nonce\n            {\n                return None;\n            }\n            let policy_nonce = (signed_intent.intent.policy_id, signed_intent.intent.nonce);\n            (!queued_policy_nonces.insert(policy_nonce)).then_some(*key)\n        })\n        .collect::<Vec<_>>();\n    for key in duplicate_conditional_keys {\n        inner.conditional_pool.time_after_by_order.remove(&key);\n    }\n\n    inner.intent_mempool.known_intents = inner\n        .intent_mempool\n        .intents_by_order\n        .values()\n        .map(intent_id)\n        .collect();\n    inner.conditional_pool.known_intents = inner\n        .conditional_pool\n        .time_after_by_order\n        .values()\n        .map(intent_id)\n        .collect();\n}\n"
+    }
+  ],
+  "execution_error_behavior": {
+    "application_error": "Requeue the failed merged group and unexecuted suffix at the queue front in original order. Stop the pass and retry.",
+    "lemma_condition": "Successful execution or a state-preserving retry. Failure atomicity is not proved by the partition lemma."
+  },
+  "alternative_grouping": {
+    "proposal": "Use each nonempty committed leader sub-DAG as an execution group, under common leader decisions and canonical deduplication.",
+    "benefit": "Removes the fixed-count tail and modulo-b offset.",
+    "remaining_recovery_metadata": "Last applied leader and deduplication frontier, or equivalent checkpoint.",
+    "recorded_design_choice": "Run 71 selected count eight for overhead amortization in a local count sweep.",
+    "comparative_experiment_recorded": false
+  },
+  "application_error_contract": "Requeueing preserves queue order. Canonical application state is not guaranteed unchanged on error; the outer durable wrapper does not inspect the inner Result. See anc/application-contracts.json."
+}

@@ -1,0 +1,130 @@
+{
+  "id": 275,
+  "title": "Four dedicated EU runners 40k rung after adding Hetzner NBG1 replacement",
+  "date": "2026-04-27",
+  "status": "binned 40k: validator-4 ingress collapse across three runners plus validator-2 undrained tail",
+  "code_commit": "eba0ca303d50a53072c2cf3aa8cf970ea0b46a15",
+  "validator_binary_sha256": "dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd",
+  "loadgen_binary_sha256": "3556e24585463ca9602bf8839acd88f4c54835283fe28300fa4d8c618fa12e26",
+  "inventory": "chain/deploy/ansible/inventory/testnet.yml",
+  "topology": {
+    "validators": [
+      "validator-1 root@203.0.113.15",
+      "validator-2 root@203.0.113.17",
+      "validator-3 root@203.0.113.14",
+      "validator-4 root@203.0.113.16"
+    ],
+    "ingress_ports": [
+      8645,
+      8646,
+      8647
+    ],
+    "loadgen_hosts": [
+      "root@203.0.113.10",
+      "root@203.0.113.12",
+      "root@203.0.113.13",
+      "root@203.0.113.19"
+    ],
+    "excluded_runners": [
+      "root@203.0.113.11",
+      "root@203.0.113.18",
+      "root@203.0.113.20"
+    ],
+    "writer_seed_tag": 270,
+    "seed_concurrency": 16,
+    "endpoint_to_runner_mapping": {
+      "validator-1-p8645": "root@203.0.113.12",
+      "validator-1-p8646": "root@203.0.113.13",
+      "validator-1-p8647": "root@203.0.113.19",
+      "validator-2-p8645": "root@203.0.113.10",
+      "validator-2-p8646": "root@203.0.113.12",
+      "validator-2-p8647": "root@203.0.113.13",
+      "validator-3-p8645": "root@203.0.113.19",
+      "validator-3-p8646": "root@203.0.113.10",
+      "validator-3-p8647": "root@203.0.113.12",
+      "validator-4-p8645": "root@203.0.113.13",
+      "validator-4-p8646": "root@203.0.113.19",
+      "validator-4-p8647": "root@203.0.113.10"
+    },
+    "mapping_note": "loadtest_live_network_multi_ingress.sh assigns ext_hosts[endpoint_index % host_count] after incrementing endpoint_index."
+  },
+  "preflight": [
+    "ssh -i ~/.ssh/id_n2_ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/tmp/codex_known_hosts root@203.0.113.19 'hostname; nproc; free -h | sed -n \"1,2p\"; uptime -p'",
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible-playbook playbooks/reset_state.yml",
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible-playbook playbooks/verify.yml"
+  ],
+  "attempts": [
+    {
+      "name": "275a-four-eu-runners-40k-v4-collapse-undrained-binned",
+      "command": "LOADTEST_RUNNER_SSH_OPTS='-i ~/.ssh/id_n2_ssh -o StrictHostKeyChecking=no' LOADTEST_EXTERNAL_RUNNER_HOSTS='root@203.0.113.10 root@203.0.113.12 root@203.0.113.13 root@203.0.113.19' LOADTEST_WRITER_SEED_TAG=270 LOADTEST_SEED_CONCURRENCY=16 LOADTEST_REMOTE_CACHE_DIR=/var/tmp/kombat-loadgen-cache LOADTEST_PAYLOAD_CACHE=1 LOADTEST_OUTPUT_DIR=/tmp/and-live-275a-four-eu-runners-40k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=4 LOADTEST_STRICT_NONCE_RETRY=0 LOADTEST_FAIL_ON_ERRORS=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 40000 60",
+      "artifact": "/tmp/and-live-275a-four-eu-runners-40k-60s",
+      "aggregate_summary_sha256": "2067b95f3582245653f6c60ddb587ce771ff9c067ad3cf0f2c2133a05633198e",
+      "writers_sha256": "3da7f9495b61e24673bc2f17ae5b2de74d38e2fc0d6f8061ebbc026eb2cfc0c0",
+      "post_run_network_status_sha256": "7e227b9573f48800e493cfea0005e555b22b6a13b08900854c4a3e580a4ab8d9",
+      "post_run_network_status_plus30_sha256": "6ef96642b7f0df73ac3fcba4d3ea39cac0cdd5158802a0c8a3f14caeeb150a5b",
+      "state_roots_sha256": "5349b73707734ebb5a0789bd81f796161a9872c413f16c79626d766a4bad3cec",
+      "runner_profile_dirs": {
+        "bootstrap": "/tmp/and-live-275a-four-eu-runners-40k-60s/runner-profiles-live",
+        "load": "/tmp/and-live-275a-four-eu-runners-40k-60s/runner-profiles-load"
+      },
+      "runner_profile_snapshots": {
+        "bootstrap": 44,
+        "load": 68
+      },
+      "status": "binned",
+      "reason": "The run had zero RPC/nonce/network errors and shared head/state root, but it is not green. Validator-2 still retained mahi_pre_admitted_pool.items=72 after an extra 30s settle, and validator-4's three ingress endpoints all collapsed even though they were driven from three different runner hosts.",
+      "endpoint_count": 12,
+      "measured_rps_total": 30739.8,
+      "ok_total": 1936496,
+      "committed_total": 1936496,
+      "committed_tps": 32274.9,
+      "rpc_err_total": 0,
+      "nonce_err_total": 0,
+      "net_err_total": 0,
+      "converged_height": 134,
+      "head_hash": "0x8ff2c25a187a82420ea1262c665adb3009ceeed36dd9543f53eb181f4e33a55d",
+      "state_root_hex": "0xd00bde8e198bef6d60c872c75849f2998a259ab6d8b4a1eaf96d70d535c9a05e",
+      "undrained_validator": {
+        "validator": "validator-2",
+        "mahi_pre_admitted_pool_items": 72,
+        "accepted": 485128,
+        "drained": 485056
+      },
+      "weak_endpoints": [
+        {
+          "endpoint": "validator-4-p8645-60s",
+          "runner": "root@203.0.113.13",
+          "measured_rps": 1233.2,
+          "committed": 73992
+        },
+        {
+          "endpoint": "validator-4-p8646-60s",
+          "runner": "root@203.0.113.19",
+          "measured_rps": 1382.5,
+          "committed": 83424
+        },
+        {
+          "endpoint": "validator-4-p8647-60s",
+          "runner": "root@203.0.113.10",
+          "measured_rps": 1340.3,
+          "committed": 87648
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    "/tmp/and-live-275a-four-eu-runners-40k-60s",
+    "/tmp/and-live-275a-four-eu-runners-40k-60s/post-run-network-status.txt",
+    "/tmp/and-live-275a-four-eu-runners-40k-60s/post-run-network-status-plus30.txt",
+    "/tmp/and-live-275a-four-eu-runners-40k-60s/state-roots-height-134.txt",
+    "/tmp/and-live-275a-four-eu-runners-40k-60s/runner-profiles-live",
+    "/tmp/and-live-275a-four-eu-runners-40k-60s/runner-profiles-load"
+  ],
+  "runner_observations": [
+    "The new dedicated runner root@203.0.113.19 was reachable and idle before the run: hostname ubuntu-24gb-nbg1-1, 12 vCPU, about 22 GiB available RAM, uptime about 10 minutes.",
+    "The weak validator-4 endpoints were not co-located on one runner. validator-4-p8645 ran on root@203.0.113.13, validator-4-p8646 on root@203.0.113.19, and validator-4-p8647 on root@203.0.113.10.",
+    "Runner profiles captured active kombat_loadgen processes on those three hosts during the load window: validator-4-p8645 around 51-65% CPU on root@203.0.113.13, validator-4-p8646 around 17-43% CPU on root@203.0.113.19, and validator-4-p8647 around 19-39% CPU on root@203.0.113.10.",
+    "Validator-2's endpoints were healthy by throughput at about 3162.4-3254.4 RPS, yet validator-2 still retained 72 Mahi pre-admitted items after an extra 30s settle."
+  ],
+  "conclusion": "This is binned. The first four-runner rung did not recover a better green floor; it introduced a validator-4-side collapse across three different runners and preserved a validator-2 drain defect. The current green TPS remains item274's 42,221.2 committed TPS. The next move is validator-side investigation on validator-4 and the validator-2 residual tail, not a higher offered-load rung."
+}

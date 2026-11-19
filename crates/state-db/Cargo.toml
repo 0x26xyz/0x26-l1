@@ -1,0 +1,23 @@
+[package]
+name = "kombat-chain-state-db"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[lib]
+name = "kombat_chain_state_db"
+path = "src/lib.rs"
+
+[dependencies]
+borsh = "1.6.1"
+kombat-chain-consensus = { path = "../consensus" }
+redb = "2.6"
+sha2 = "0.10.9"
+sha3 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

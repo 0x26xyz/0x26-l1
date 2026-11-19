@@ -1,0 +1,9 @@
+- import_playbook: deploy.yml
+  vars:
+    # Non-reset upgrades must not restart onto the target binary before
+    # the offline persistence gate has checked or migrated state.redb.
+    and_chain_restart_services: false
+
+- import_playbook: migrate_state.yml
+
+- import_playbook: verify.yml

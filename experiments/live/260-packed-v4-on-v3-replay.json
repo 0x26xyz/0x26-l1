@@ -1,0 +1,152 @@
+{
+  "id": 260,
+  "name": "packed-v4-on-v3-replay",
+  "status": "kept diagnostic; not green",
+  "date": "2026-04-26",
+  "base_results": [
+    {
+      "decision_log_item": 251,
+      "committed_tps": 77666.8,
+      "artifact": "/tmp/and-live-251-v1-nginx-stopped-100k-60s",
+      "finding": "best clean exact-binary live reference"
+    },
+    {
+      "decision_log_item": 259,
+      "committed_tps": 15170.1,
+      "artifact": "/tmp/and-live-259-v3-v4-role-swap-100k-60s",
+      "finding": "collapse stayed with physical validator-4 host after v3/v4 identity swap"
+    }
+  ],
+  "hypothesis": "The current four-physical-host topology is invalid for performance work because physical validator-4 is pathological. Running validator-4 as a second isolated instance on physical validator-3, while stopping physical validator-4 and driving ingress only through validators 2/3, should recover item251-class throughput without changing protocol code.",
+  "files": [
+    "chain/deploy/ansible/playbooks/deploy.yml",
+    "chain/deploy/ansible/playbooks/verify.yml",
+    "chain/deploy/ansible/playbooks/reset_state.yml",
+    "chain/deploy/ansible/templates/kombat-chain.service.j2",
+    "chain/deploy/ansible/templates/kombat-ingress.service.j2",
+    "chain/deploy/ansible/inventory/260-packed-v4-on-v3.yml",
+    "chain/experiments/live/260-packed-v4-on-v3-hosts.txt",
+    "chain/experiments/live/260-packed-v4-on-v3-replay.json",
+    "chain/THROUGHPUT_DECISION_LOG.md"
+  ],
+  "git_environment_anchors": {
+    "plan_tag": "chain-exp-260-packed-v4-on-v3-replay-plan",
+    "deploy_fix_tag": "chain-exp-260-packed-v4-on-v3-deploy-fix",
+    "result_tag": "chain-exp-260-packed-v4-on-v3-replay-result",
+    "replay_binary": "/tmp/kombat_chain-live-dd022982",
+    "replay_binary_sha256": "dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd",
+    "packed_inventory": "chain/deploy/ansible/inventory/260-packed-v4-on-v3.yml",
+    "loadtest_hosts_file": "chain/experiments/live/260-packed-v4-on-v3-hosts.txt"
+  },
+  "topology": {
+    "validator-1": {
+      "physical_host": "203.0.113.15",
+      "rpc_port": 8545,
+      "ingress_ports": [8645, 8646, 8647]
+    },
+    "validator-2": {
+      "physical_host": "203.0.113.17",
+      "rpc_port": 8545,
+      "ingress_ports": [8645, 8646, 8647, 8648, 8649, 8650]
+    },
+    "validator-3": {
+      "physical_host": "203.0.113.14",
+      "rpc_port": 8545,
+      "ingress_ports": [8645, 8646, 8647, 8648, 8649, 8650]
+    },
+    "validator-4": {
+      "physical_host": "203.0.113.14",
+      "rpc_port": 8548,
+      "service": "kombat-chain-v4",
+      "config_dir": "/etc/and-chain-v4",
+      "state_dir": "/var/lib/and-chain-v4",
+      "ingress_ports": []
+    },
+    "retired_physical_validator_4": {
+      "physical_host": "203.0.113.16",
+      "services_stopped": true
+    }
+  },
+  "planned_commands": [
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible -i inventory/260-packed-v4-on-v3.yml kombat_retired_testnet -m shell -a 'systemctl stop kombat-chain-ingress6 kombat-chain-ingress5 kombat-chain-ingress4 kombat-chain-ingress3 kombat-chain-ingress2 kombat-chain-ingress kombat-chain || true'",
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) KOMBAT_BINARY_PATH=/tmp/kombat_chain-live-dd022982 .venv/bin/ansible-playbook -i inventory/260-packed-v4-on-v3.yml playbooks/deploy.yml",
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) KOMBAT_BINARY_PATH=/tmp/kombat_chain-live-dd022982 .venv/bin/ansible-playbook -i inventory/260-packed-v4-on-v3.yml playbooks/verify.yml",
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible-playbook -i inventory/260-packed-v4-on-v3.yml playbooks/reset_state.yml",
+    "rm -rf /tmp/and-live-testnet-260-packed && mkdir -p /tmp/and-live-testnet-260-packed && cp chain/experiments/live/260-packed-v4-on-v3-hosts.txt /tmp/and-live-testnet-260-packed/hosts.txt",
+    "LOADTEST_OUTPUT_DIR=/tmp/and-live-260-packed-v4-on-v3-v2v3-12ingress-100k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=1 LOADTEST_FAIL_ON_ERRORS=1 LOADTEST_VALIDATOR_NAMES='validator-2 validator-3' LOADTEST_ENDPOINT_PORTS='8645 8646 8647 8648 8649 8650' bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet-260-packed 32 100000 60"
+  ],
+  "pre_run_deploy_fixes": [
+    "Set ansible_user=root at all.vars scope in the packed inventory so retired physical validator-4 commands use root instead of the local username.",
+    "Changed deploy.yml service-user creation to use a stable service-user home instead of the per-instance state dir, so a second validator instance does not try to usermod the already-running and-chain user."
+  ],
+  "result": {
+    "artifact": "/tmp/and-live-260-packed-v4-on-v3-v2v3-12ingress-100k-60s",
+    "committed_total": 2532984,
+    "committed_tps": 42216.4,
+    "ok_total": 2532984,
+    "measured_rps_total": 38591.5,
+    "rpc_err_total": 0,
+    "nonce_err_total": 0,
+    "net_err_total": 0,
+    "endpoint_rps": {
+      "validator-2-p8645": 3239.6,
+      "validator-2-p8646": 3102.9,
+      "validator-2-p8647": 3302.7,
+      "validator-2-p8648": 3060.5,
+      "validator-2-p8649": 3240.9,
+      "validator-2-p8650": 3350.3,
+      "validator-3-p8645": 3282.7,
+      "validator-3-p8646": 3106.4,
+      "validator-3-p8647": 3107.6,
+      "validator-3-p8648": 3507.7,
+      "validator-3-p8649": 3166.5,
+      "validator-3-p8650": 3123.7
+    },
+    "common_height_state_root": {
+      "height": 72,
+      "block_hash_hex": "0x88a879e7b7c322af2cb78149ee28488d1bb0bf75291f73ee99f97d65108adf3f",
+      "state_root_hex": "0x6a314d56272ea89f7e06df6416dd73ae93bc03a43e2f5a8fd8c8a2c8b14b9459",
+      "matched_all_validators": true
+    },
+    "mahi_metrics": {
+      "commit_log_hash_hex": "0xa6f121d97e954c662692f3b175a5f3b213619d10131aaecdb84bcef274770d6d",
+      "committed_block_count": 569,
+      "executed_intent_count": 2532984,
+      "sigverify_p90_ms": {
+        "validator-1": 343,
+        "validator-2": 499,
+        "validator-3": 737,
+        "validator-4-on-v3": 820
+      },
+      "commit_execution_batch_p90_ms": {
+        "validator-1": 303,
+        "validator-2": 434,
+        "validator-3": 608,
+        "validator-4-on-v3": 627
+      }
+    },
+    "pre_admitted_pool_items": {
+      "validator-1": 0,
+      "validator-2": 0,
+      "validator-3": 0,
+      "validator-4-on-v3": 0
+    },
+    "pre_admitted_pool_accepted": {
+      "validator-1": 632472,
+      "validator-2": 635296,
+      "validator-3": 631160,
+      "validator-4-on-v3": 634056
+    },
+    "classification": "Packed topology removed the physical validator-4 substrate failure and preserved correctness/drain, but did not recover item251 green TPS. The new bottleneck is delivered ingress/loadgen capacity on the two driven physical hosts: 100k offered produced only 38.6k measured RPS and all accepted work committed."
+  },
+  "success_criteria": {
+    "committed_tps_recovery_floor": 76000,
+    "zero_rpc_errors": true,
+    "zero_nonce_errors": true,
+    "zero_network_errors": true,
+    "common_height_state_roots_match": true,
+    "pre_admitted_pools_drain": true
+  },
+  "current_topology": "Packed topology left active after the run because it is correct and materially better than the current four-physical-host replay, though still not green.",
+  "rollback": "To return to the default topology, stop kombat-chain-v4 and extra ingress4-6 services on validators 2/3, then redeploy inventory/testnet.yml and wipe state."
+}

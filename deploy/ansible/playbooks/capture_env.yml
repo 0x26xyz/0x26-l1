@@ -1,0 +1,144 @@
+- name: Capture Kombat live testnet environment snapshot
+  hosts: kombat_live_testnet
+  gather_facts: true
+  become: true
+  vars:
+    chain_services: "{{ ['kombat-chain'] + (and_chain_ingress_services | map(attribute='name') | list) }}"
+    chain_ports: "{{ [and_chain_validator_rpc_port] + (and_chain_ingress_services | map(attribute='port') | list) }}"
+    local_snapshot_dir: "{{ lookup('env', 'KOMBAT_SNAPSHOT_DIR') | default('/tmp/and-live-env-snapshot-' + lookup('pipe', 'date -u +%Y%m%dT%H%M%SZ'), true) }}"
+    remote_snapshot_dir: "/tmp/kombat-env-snapshot-{{ inventory_hostname }}"
+    remote_snapshot_tar: "/tmp/kombat-env-snapshot-{{ inventory_hostname }}.tgz"
+  tasks:
+    - name: Ensure local snapshot directory exists
+      ansible.builtin.file:
+        path: "{{ local_snapshot_dir }}"
+        state: directory
+        mode: "0755"
+      delegate_to: localhost
+      become: false
+      run_once: true
+
+    - name: Reset remote snapshot directory
+      ansible.builtin.file:
+        path: "{{ remote_snapshot_dir }}"
+        state: absent
+
+    - name: Prepare remote snapshot directory
+      ansible.builtin.file:
+        path: "{{ remote_snapshot_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Write Ansible facts
+      ansible.builtin.copy:
+        content: "{{ ansible_facts | to_nice_json }}"
+        dest: "{{ remote_snapshot_dir }}/ansible-facts.json"
+        mode: "0600"
+
+    - name: Capture host, service, process, socket, and RPC state
+      ansible.builtin.shell: |
+        set -euo pipefail
+
+        out="{{ remote_snapshot_dir }}"
+        mkdir -p "$out/env" "$out/systemd" "$out/proc" "$out/rpc"
+
+        {
+          echo "captured_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "inventory_hostname={{ inventory_hostname }}"
+          echo "ansible_host={{ ansible_host | default(inventory_hostname) }}"
+          echo "uname=$(uname -a)"
+          echo "uptime=$(uptime)"
+          echo "nproc=$(nproc)"
+          echo
+          echo "## lscpu"
+          lscpu || true
+          echo
+          echo "## free -m"
+          free -m || true
+          echo
+          echo "## df -h"
+          df -h || true
+          echo
+          echo "## selected sysctl"
+          sysctl \
+            fs.file-max \
+            net.core.rmem_max \
+            net.core.wmem_max \
+            net.core.somaxconn \
+            net.ipv4.ip_local_port_range \
+            net.ipv4.tcp_fin_timeout \
+            net.ipv4.tcp_tw_reuse \
+            net.core.netdev_max_backlog 2>/dev/null || true
+          echo
+          echo "## ip address"
+          ip addr || true
+          echo
+          echo "## ip route"
+          ip route || true
+          echo
+          echo "## ip link stats"
+          ip -s link || true
+          echo
+          echo "## softirqs"
+          cat /proc/softirqs || true
+          echo
+          echo "## proc net snmp"
+          cat /proc/net/snmp || true
+          echo
+          echo "## vmstat"
+          vmstat 1 5 || true
+          echo
+          echo "## top threads"
+          top -b -n 1 -H -o %CPU || true
+        } > "$out/host.txt"
+
+        sha256sum "{{ and_chain_install_root }}/bin/kombat_chain" > "$out/kombat_chain.sha256"
+
+        for env_file in {{ and_chain_config_dir }}/*.env; do
+          [ -f "$env_file" ] || continue
+          sed -E 's/^(KOMBAT_(OPERATOR_TOKEN|BOOTSTRAP_BEARER_TOKEN)=).*/\1<redacted>/' "$env_file" > "$out/env/$(basename "$env_file")"
+        done
+
+        for svc in {{ chain_services | join(' ') }}; do
+          systemctl show "$svc" --no-pager > "$out/systemd/${svc}.show.txt" || true
+          systemctl cat "$svc" --no-pager > "$out/systemd/${svc}.cat.txt" || true
+          systemctl status "$svc" --no-pager -l > "$out/systemd/${svc}.status.txt" || true
+        done
+
+        ps -eo pid,ppid,cls,pri,ni,psr,pcpu,pmem,rss,vsz,etime,comm,args --sort=-pcpu > "$out/ps.txt" || true
+        ss -lntp > "$out/ss-listen.txt" || true
+        ss -antp > "$out/ss-all.txt" || true
+
+        for pid in $(pgrep -f '{{ and_chain_install_root }}/bin/kombat_chain' || true); do
+          [ -d "/proc/$pid" ] || continue
+          cp "/proc/$pid/limits" "$out/proc/${pid}.limits.txt" || true
+          tr '\0' '\n' < "/proc/$pid/environ" \
+            | sed -E 's/^(KOMBAT_(OPERATOR_TOKEN|BOOTSTRAP_BEARER_TOKEN)=).*/\1<redacted>/' \
+            > "$out/proc/${pid}.environ.txt" || true
+          cp "/proc/$pid/status" "$out/proc/${pid}.status.txt" || true
+          cp "/proc/$pid/sched" "$out/proc/${pid}.sched.txt" || true
+        done
+
+        for port in {{ chain_ports | join(' ') }}; do
+          curl --max-time 3 -sS -H 'content-type: application/json' \
+            --data '{"jsonrpc":"2.0","method":"kombat_chainInfo","params":{},"id":1}' \
+            "http://127.0.0.1:${port}" > "$out/rpc/chain-info-${port}.json" || true
+          curl --max-time 3 -sS -H 'content-type: application/json' \
+            --data '{"jsonrpc":"2.0","method":"kombat_getConsensusMetrics","params":{},"id":1}' \
+            "http://127.0.0.1:${port}" > "$out/rpc/consensus-metrics-${port}.json" || true
+        done
+
+        tar -C "$out" -czf "{{ remote_snapshot_tar }}" .
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Fetch host snapshot archive
+      ansible.builtin.fetch:
+        src: "{{ remote_snapshot_tar }}"
+        dest: "{{ local_snapshot_dir }}/{{ inventory_hostname }}.tgz"
+        flat: true
+
+    - name: Print snapshot location
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} snapshot fetched to {{ local_snapshot_dir }}/{{ inventory_hostname }}.tgz"

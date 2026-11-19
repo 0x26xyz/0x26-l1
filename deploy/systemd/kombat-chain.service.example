@@ -1,0 +1,23 @@
+[Unit]
+Description=& chain validator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=and-chain
+Group=and-chain
+WorkingDirectory=/opt/and-chain
+EnvironmentFile=/etc/and-chain/kombat-chain.env
+ExecStart=/opt/and-chain/bin/kombat_chain
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/and-chain
+
+[Install]
+WantedBy=multi-user.target

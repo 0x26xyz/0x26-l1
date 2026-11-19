@@ -1,0 +1,88 @@
+- name: Resync passive Kombat validators from primary snapshot
+  hosts: "{{ and_chain_resync_followers_hosts | default('validator-3,validator-4') }}"
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../inventory/group_vars/kombat_live_testnet.yml
+  vars:
+    validator_service_name: "{{ and_chain_validator_service_name | default('kombat-chain') }}"
+    ingress_service_names: "{{ and_chain_ingress_services | map(attribute='name') | list }}"
+    chain_services: "{{ [validator_service_name] + ingress_service_names }}"
+    backup_suffix: "{{ lookup('pipe', 'date -u +%Y%m%dT%H%M%SZ') }}"
+    state_db_path: "{{ and_chain_state_dir }}/state.redb"
+    state_db_backup_path: "{{ and_chain_state_dir }}/state.redb.pre-resync.{{ backup_suffix }}"
+  tasks:
+    - name: Refuse to resync an active auto-producer
+      ansible.builtin.assert:
+        that:
+          - not (and_chain_auto_network_round_enabled | default(true) | bool)
+          - not (and_chain_validator_network_topology_enabled | default(true) | bool)
+          - not (and_chain_peer_transport_enabled | default(true) | bool)
+        fail_msg: "Refusing to resync {{ inventory_hostname }} while validator network topology, auto-network production, or peer transport is enabled."
+
+    - name: Refuse to resync without explicit primary bootstrap URL
+      ansible.builtin.assert:
+        that:
+          - and_chain_validator_bootstrap_rpc_url is defined
+          - and_chain_validator_bootstrap_rpc_url | length > 0
+        fail_msg: "Set and_chain_validator_bootstrap_rpc_url before resyncing {{ inventory_hostname }}."
+
+    - name: Stop follower services before state replacement
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+      loop: "{{ chain_services }}"
+
+    - name: Check existing redb state file
+      ansible.builtin.stat:
+        path: "{{ state_db_path }}"
+      register: follower_state_file
+
+    - name: Back up existing redb state file
+      ansible.builtin.command:
+        cmd: "mv {{ state_db_path }} {{ state_db_backup_path }}"
+      when: follower_state_file.stat.exists
+
+    - name: Start validator to bootstrap from primary snapshot
+      ansible.builtin.systemd:
+        name: "{{ validator_service_name }}"
+        state: started
+        enabled: true
+
+    - name: Wait for resynced validator RPC
+      ansible.builtin.shell: |
+        set -euo pipefail
+        curl -fsS -m 5 \
+          -H 'content-type: application/json' \
+          --data '{"jsonrpc":"2.0","method":"kombat_chainInfo","params":{},"id":1}' \
+          "http://127.0.0.1:{{ and_chain_validator_rpc_port }}" >/dev/null
+      args:
+        executable: /bin/bash
+      register: resynced_validator_rpc_check
+      changed_when: false
+      retries: 30
+      delay: 2
+      until: resynced_validator_rpc_check.rc == 0
+
+    - name: Start ingress services after validator resync
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: started
+        enabled: true
+      loop: "{{ ingress_service_names }}"
+
+    - name: Wait for resynced ingress RPC ports
+      ansible.builtin.shell: |
+        set -euo pipefail
+        curl -fsS -m 5 \
+          -H 'content-type: application/json' \
+          --data '{"jsonrpc":"2.0","method":"kombat_chainInfo","params":{},"id":1}' \
+          "http://127.0.0.1:{{ item.port }}" >/dev/null
+      args:
+        executable: /bin/bash
+      register: resynced_ingress_rpc_check
+      changed_when: false
+      retries: 30
+      delay: 2
+      until: resynced_ingress_rpc_check.rc == 0
+      loop: "{{ and_chain_ingress_services }}"

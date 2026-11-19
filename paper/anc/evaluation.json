@@ -1,0 +1,482 @@
+{
+  "title": "0x26 Chain supplementary evaluation records",
+  "prepared_on": "2026-11-16",
+  "description": "Selected development results and existing regression results. This file adds no experiment or test run.",
+  "measurement_definitions": {
+    "sampled_average_tps": "Reported commit-progress average during the load window.",
+    "final_count_divided_by_load_duration_tps": "The final count includes warmup completions and post-load drain, but the denominator is the load duration. This can exceed the offered rate without a higher in-window completion rate.",
+    "delivered_rps": "Load-generator measured observations per second; error outcomes can be included.",
+    "latency": "Request completion latency is distinct from durable finality latency."
+  },
+  "implementation_stages": {
+    "throughput_runs": "April 2026 execution stages.",
+    "durable_backend_integration": "2026-05-03",
+    "separate_durable_roots": "2026-05-17",
+    "source_binary_provenance": "The 27 April revision is a post-hoc source proxy. It already has fixed-count draining and the default-on insertion flag. It follows runs 180-182 and the partial-flush revert. It does not establish the exact source or binary identity for each measured run from 118 through 219. The development log supplies measurements; selected upstream changes supply the partial-flush mechanism and revert.",
+    "april_source_proxy": "37d360898ef8293bceeab569ae5eb6b8176116c1"
+  },
+  "runs": [
+    {
+      "run": "118",
+      "record_date": "2026-04-24",
+      "setting": "local",
+      "validators": 4,
+      "target_rate": 60000,
+      "load_duration_seconds": 60,
+      "sampled_average_tps": 25302.1,
+      "final_count_divided_by_load_duration_tps": 34357.6,
+      "final_committed_count": 2061456,
+      "delivered_rps": null,
+      "context": "Different accounting windows.",
+      "record_status": "- kept",
+      "source": {
+        "source_path": "chain/THROUGHPUT_DECISION_LOG.md",
+        "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+        "source_start_line": 4204,
+        "source_end_line": 4247,
+        "source_section_sha256": "50ed7114a2e592bc3ab7d9a736a9f1b6bd12bd29678e66da3e1a6eb40d11067e"
+      }
+    },
+    {
+      "run": "131",
+      "record_date": "2026-04-24",
+      "setting": "local",
+      "validators": 4,
+      "target_rate": 60000,
+      "load_duration_seconds": 60,
+      "sampled_average_tps": 35737.6,
+      "final_count_divided_by_load_duration_tps": 59260.6,
+      "final_committed_count": null,
+      "delivered_rps": null,
+      "context": "Final count includes the recorded warmup convention.",
+      "record_status": "- kept",
+      "source": {
+        "source_path": "chain/THROUGHPUT_DECISION_LOG.md",
+        "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+        "source_start_line": 4667,
+        "source_end_line": 4712,
+        "source_section_sha256": "ac43593312a3ea1b65777e767fd698bc2c6756d444b8991bd49bd6a48811c8f3"
+      }
+    },
+    {
+      "run": "170",
+      "record_date": "2026-04-25",
+      "setting": "local",
+      "validators": 4,
+      "target_rate": 100000,
+      "load_duration_seconds": 60,
+      "sampled_average_tps": 87254.6,
+      "final_committed_count": 6474304,
+      "final_count_divided_by_load_duration_tps": 107905.06666666667,
+      "request_latency_ms": {
+        "p50": 3.272,
+        "p90": 72.385,
+        "p99": 123.715
+      },
+      "final_execution_batch_latency_ms": {
+        "p90": 248,
+        "max": 325
+      },
+      "record_status": "- kept diagnostic",
+      "source": {
+        "source_path": "chain/THROUGHPUT_DECISION_LOG.md",
+        "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+        "source_start_line": 5825,
+        "source_end_line": 5848,
+        "source_section_sha256": "ac2c59740f9be6bab5a9e971aad89c02ee87da8662a89bb3a6239d987f60b66e"
+      }
+    },
+    {
+      "run": "177",
+      "record_date": "2026-04-25",
+      "setting": "local",
+      "validators": 4,
+      "target_rate": 100000,
+      "load_duration_seconds": 60,
+      "sampled_average_tps": 87438.6,
+      "final_committed_count": 6494640,
+      "final_count_divided_by_load_duration_tps": 108244.0,
+      "request_latency_ms": null,
+      "final_execution_batch_latency_ms": {
+        "p90": 265,
+        "max": 327
+      },
+      "record_status": "- kept diagnostic",
+      "source": {
+        "source_path": "chain/THROUGHPUT_DECISION_LOG.md",
+        "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+        "source_start_line": 6007,
+        "source_end_line": 6031,
+        "source_section_sha256": "f1f024995c507ab16ed3c48566092d6771228f8476fb93b6b5648af1d67fd18f"
+      },
+      "profiler_nonempty_batch_latency_ms": {
+        "p90": 236,
+        "p99": 341,
+        "mean": 93.1
+      }
+    },
+    {
+      "run": "180",
+      "record_date": "2026-04-25",
+      "setting": "local",
+      "validators": 4,
+      "target_rate": 100000,
+      "load_duration_seconds": 60,
+      "sampled_average_tps": 97768.6,
+      "final_count_divided_by_load_duration_tps": 108326.53333333334,
+      "final_committed_count": 6499592,
+      "delivered_rps": null,
+      "context": "Restricted resting-order workload.",
+      "record_status": "- kept",
+      "source": {
+        "source_path": "chain/THROUGHPUT_DECISION_LOG.md",
+        "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+        "source_start_line": 6087,
+        "source_end_line": 6118,
+        "source_section_sha256": "4286e93abec5a19f193fddaf99ebfbb93bb18e084c1a8eaa79d34e5734653dd4"
+      },
+      "workload": "Non-crossing resting-order insertions; no trades execute.",
+      "validator_placement": "Four validator processes on one host.",
+      "storage_stage": "Before the May durable-backend integration.",
+      "flag": "KOMBAT_PHASE6_INPLACE_RESTING_COMMIT=1",
+      "flag_default_at_run_time": "off",
+      "request_latency_ms": {
+        "p50": 2.125,
+        "p90": 28.834,
+        "p99": 88.235
+      },
+      "final_execution_batch_latency_ms": {
+        "p90": 95,
+        "max": 145
+      },
+      "reported_request_errors": 0
+    },
+    {
+      "run": "181",
+      "record_date": "2026-04-25",
+      "setting": "local",
+      "validators": 4,
+      "target_rate": 150000,
+      "load_duration_seconds": 60,
+      "sampled_average_tps": 102906.9,
+      "delivered_rps": 121706.0,
+      "final_committed_count": 8016240,
+      "final_count_divided_by_load_duration_tps": 133604.0,
+      "request_latency_ms": {
+        "p50": 61.22,
+        "p90": 94.022,
+        "p99": 129.461
+      },
+      "final_execution_batch_latency_ms": {
+        "p90": 175,
+        "max": 252
+      },
+      "pre_admitted_items_at_final_sample": 297856,
+      "pending_relay_at_final_sample": 0,
+      "reported_request_errors": 0,
+      "context": "High-offer diagnostic; achieved delivery below target and an execution queue remained.",
+      "record_status": "- kept diagnostic",
+      "source": {
+        "source_path": "chain/THROUGHPUT_DECISION_LOG.md",
+        "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+        "source_start_line": 6119,
+        "source_end_line": 6140,
+        "source_section_sha256": "b46e9193ef3c28e3a6b4586fe7585ebbce94e80d3a6e40382c2d8ee9fdc1fc06"
+      }
+    },
+    {
+      "run": "182",
+      "record_date": "2026-04-25",
+      "setting": "local",
+      "validators": 4,
+      "target_rate": 100000,
+      "load_duration_seconds": 60,
+      "sampled_average_tps": 98314.7,
+      "final_committed_count": 6499088,
+      "final_count_divided_by_load_duration_tps": 108318.13333333333,
+      "request_latency_ms": {
+        "p50": 1.314,
+        "p90": 16.187,
+        "p99": 70.225
+      },
+      "final_execution_batch_latency_ms": {
+        "p90": 69,
+        "max": 133
+      },
+      "record_status": "- kept",
+      "source": {
+        "source_path": "chain/THROUGHPUT_DECISION_LOG.md",
+        "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+        "source_start_line": 6141,
+        "source_end_line": 6168,
+        "source_section_sha256": "eb90aad3fe9a2e74fac449f0d1cd3e9badeed4731a9d2c41a6b13f15ea8788d9"
+      },
+      "flag_override": null,
+      "flag_default_at_run_time": "on",
+      "context": "Promotion from opt-in to opt-out; 3712 pre-admitted items remained in the final sample."
+    },
+    {
+      "run": "217",
+      "record_date": "2026-04-26",
+      "setting": "distributed",
+      "validators": 4,
+      "target_rate": 100000,
+      "load_duration_seconds": 60,
+      "sampled_average_tps": null,
+      "final_count_divided_by_load_duration_tps": 32838.2,
+      "final_committed_count": 1970295,
+      "delivered_rps": null,
+      "context": "Partial-flush change rejected after execution-root divergence.",
+      "record_status": "- binned and reverted",
+      "source": {
+        "source_path": "chain/THROUGHPUT_DECISION_LOG.md",
+        "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+        "source_start_line": 7163,
+        "source_end_line": 7195,
+        "source_section_sha256": "98e7fbc199188148b4f7c9d0d34c0ac6fb4c9f8bd36d84b60467866b1fc96ba8"
+      }
+    },
+    {
+      "run": "219",
+      "record_date": "2026-04-26",
+      "setting": "distributed",
+      "validators": 4,
+      "target_rate": 100000,
+      "load_duration_seconds": 60,
+      "sampled_average_tps": null,
+      "final_count_divided_by_load_duration_tps": 85382.0,
+      "final_committed_count": 5122920,
+      "delivered_rps": null,
+      "context": "Six execution blocks remained pending.",
+      "record_status": "- kept diagnostic",
+      "source": {
+        "source_path": "chain/THROUGHPUT_DECISION_LOG.md",
+        "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+        "source_start_line": 7223,
+        "source_end_line": 7247,
+        "source_section_sha256": "a8172cf057f3719ce4486194b8999491c680fefc5a1ac4754240bb3556ea7b68"
+      }
+    },
+    {
+      "run": "274b",
+      "record_date": "2026-04-27",
+      "setting": "distributed",
+      "validators": 4,
+      "target_rate": 60000,
+      "load_duration_seconds": 60,
+      "sampled_average_tps": null,
+      "final_count_divided_by_load_duration_tps": 42221.2,
+      "final_committed_count": 2533272,
+      "delivered_rps": 41635.1,
+      "context": "Higher load rung; three external EU load generators; four validators.",
+      "record_status": "- kept 40k green\n   - kept 60k green under-driven",
+      "source": {
+        "source_path": "chain/THROUGHPUT_DECISION_LOG.md",
+        "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+        "source_start_line": 9101,
+        "source_end_line": 9158,
+        "source_section_sha256": "2f9c5118de65c40ff944d6ee30b23d6118d38de1596a3c6680bc771dd1c5ab89"
+      }
+    },
+    {
+      "run": "275",
+      "record_date": "2026-04-27",
+      "setting": "distributed",
+      "validators": 4,
+      "target_rate": 40000,
+      "load_duration_seconds": 60,
+      "sampled_average_tps": null,
+      "final_count_divided_by_load_duration_tps": 32274.9,
+      "final_committed_count": 1936496,
+      "delivered_rps": null,
+      "context": "Four external EU load generators; delivery collapse and an undrained tail.",
+      "record_status": "- binned 40k rung",
+      "source": {
+        "source_path": "chain/THROUGHPUT_DECISION_LOG.md",
+        "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+        "source_start_line": 9159,
+        "source_end_line": 9216,
+        "source_section_sha256": "11db8f5e0144dbcc27903ceb1c994ba8e53de4e6154f587471d4d9575399a8d3"
+      }
+    }
+  ],
+  "regression_results": {
+    "date": "2026-11-16",
+    "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+    "rustc": "rustc 1.93.1 (01f6ddf75 2026-02-11)",
+    "machine": "arm64",
+    "system": "Darwin-25.2.0-arm64-arm-64bit-Mach-O",
+    "records": [
+      {
+        "command": "cargo test --locked --manifest-path chain/Cargo.toml -p kombat-chain-consensus mahi --lib",
+        "status": "PASS",
+        "passed": 28,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "command": "cargo test --locked --manifest-path chain/Cargo.toml -p kombat-chain-state-db --lib",
+        "status": "PASS",
+        "passed": 42,
+        "failed": 0,
+        "ignored": 4
+      },
+      {
+        "command": "CARGO_PROFILE_TEST_DEBUG=0 cargo test --locked --manifest-path chain/Cargo.toml -p kombat-chain-node mahi --lib",
+        "status": "PASS",
+        "passed": 18,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "command": "CARGO_PROFILE_TEST_DEBUG=0 cargo test --locked --manifest-path chain/Cargo.toml -p kombat-chain-node persistence_tests --lib",
+        "status": "PASS",
+        "passed": 42,
+        "failed": 0,
+        "ignored": 0
+      }
+    ],
+    "scope": "Filters can overlap. Four storage benchmarks were ignored. RPC integration tests are not included."
+  },
+  "derivations": {
+    "run_118_final_rate_divided_by_sampled_rate": 1.3578951944700242,
+    "run_131_final_rate_divided_by_sampled_rate": 1.6582143176934099,
+    "meaning": "Accounting comparisons, not optimization speedups.",
+    "run180_vs170_sampled_change_percent": 12.049794509401224,
+    "run180_vs177_sampled_change_percent": 11.814004341332085,
+    "run219_over217_final_rate_ratio": 2.600077653346326,
+    "interpretation": "Observational development comparisons. No isolated causal effect is established."
+  },
+  "data_scope": "Selected measurements do not include complete raw traces or uniform hardware records.",
+  "source_record_counts": {
+    "decision_records": 275,
+    "experiment_summaries": 37
+  },
+  "run217_vs219": {
+    "run217_accepted": 4291864,
+    "run217_committed": 1970295,
+    "run217_roots": "diverged",
+    "run219_accepted": 5122920,
+    "run219_committed": 5122920,
+    "run219_roots": "matched",
+    "causal_explanation": "The accepted cohorts and correctness outcomes differ. The record does not isolate the cause of the committed-count gap."
+  },
+  "regression_cases": [
+    {
+      "name": "mahi_inplace_resting_commit_advances_state_without_overlay_clone",
+      "source": "chain/crates/node/src/tests/runtime.rs",
+      "scope": "Two-order success: height, nonce, and resting-order presence.",
+      "recorded_result": "Node Mahi filter passed. No rerun."
+    },
+    {
+      "name": "mahi_inplace_resting_commit_declines_mixed_side_body_without_mutation",
+      "source": "chain/crates/node/src/tests/runtime.rs",
+      "scope": "Mixed-side decline: unchanged height, nonce, and resting-order presence.",
+      "recorded_result": "Node Mahi filter passed. No rerun."
+    },
+    {
+      "name": "mahi_committed_block_uses_pinned_oracle_prices_for_intent_replay",
+      "source": "chain/crates/node/src/tests/runtime.rs",
+      "scope": "Different local price maps, same pinned block; body and resting-order agreement.",
+      "recorded_result": "Node Mahi filter passed."
+    },
+    {
+      "name": "mahi_merged_oracle_payload_keeps_newest_observation_per_market",
+      "source": "chain/crates/node/src/tests/runtime.rs",
+      "scope": "Fresh observation followed by stale observation; retained payload and engine prices.",
+      "recorded_result": "Node Mahi filter passed."
+    },
+    {
+      "name": "engine_backend_native_mahi_root_split_roundtrip",
+      "source": "chain/crates/node/src/persistence_tests.rs",
+      "scope": "Distinct header and executor roots survive the storage round trip.",
+      "recorded_result": "Node persistence filter passed."
+    }
+  ],
+  "cross_replica_schedule_test": {
+    "executed": false,
+    "scope": "No new verification-schedule or staggered-restart test ran for this revision."
+  },
+  "inspected_test_sources": [
+    {
+      "name": "mahi_full_restart_resumes_from_durable_head_round",
+      "source": "chain/crates/rpc/src/tests.rs",
+      "scope": "Reconstructed servers advance height and round after restart.",
+      "recorded_result": "Source inspected. RPC filter not executed in the recorded review."
+    },
+    {
+      "name": "market_sharded_resting_place_orders_batch_across_interleaved_markets",
+      "scope": "Original cross-market event order and per-market order positions."
+    },
+    {
+      "name": "worker_market_matching_matches_serial_market_sharded_batch",
+      "scope": "Worker and serial market-group events, books, and policy nonces."
+    }
+  ],
+  "grouping_design_record": {
+    "record": 71,
+    "date": "2026-04-23",
+    "rationale": "Amortize checkpoint, root, header, and install costs across already-linearized blocks.",
+    "offered_rate": 8000,
+    "load_duration_seconds": 10,
+    "batch_sweep_reported_final_rates": [
+      {
+        "blocks": 4,
+        "tps": 4400.1
+      },
+      {
+        "blocks": 8,
+        "tps": 4593.7
+      },
+      {
+        "blocks": 16,
+        "tps": 4522.6
+      },
+      {
+        "blocks": 32,
+        "tps": 4138.0
+      }
+    ],
+    "comparison_with_leader_subdag_grouping_recorded": false,
+    "source": {
+      "source_path": "chain/THROUGHPUT_DECISION_LOG.md",
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "source_start_line": 2283,
+      "source_end_line": 2348,
+      "source_section_sha256": "1a4767829e531548b2e7f47dc60aa8730a1bf1eafa507cda9a575afd2f147255"
+    }
+  },
+  "positive_contribution": {
+    "mechanism_record": "anc/prechecked-execution.json",
+    "main_runs": [
+      "170",
+      "177",
+      "180",
+      "181",
+      "182"
+    ],
+    "causal_ablation": false,
+    "new_runs": 0,
+    "manuscript_role": "Supporting insertion workload, not the central thesis."
+  },
+  "execution_contracts_record": "anc/application-contracts.json",
+  "workload_reconstruction": {
+    "retained_defaults": {
+      "workload": "place-order",
+      "side": "bid",
+      "price_ticks": 1000,
+      "quantity_lots": 1,
+      "time_in_force": "Gtc",
+      "post_only": false,
+      "harness_market_id": 7,
+      "harness_market_count": 1,
+      "harness_warmup_seconds": 5
+    },
+    "wrapper_side_or_price_override": false,
+    "per_run_full_arguments_available": false,
+    "structural_eligibility": "Effectively 100% by construction in steady-state eligible bodies of one-sided equal-price orders. Empty/singleton bodies, rejections, and additional runtime items are separate.",
+    "real_flow_eligible_fraction": null
+  },
+  "live_fast_path_hit_rate": null,
+  "counter_ratio_is_body_hit_rate": false
+}

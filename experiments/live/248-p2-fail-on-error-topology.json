@@ -1,0 +1,89 @@
+{
+  "id": 248,
+  "name": "p2-fail-on-error-topology",
+  "status": "binned",
+  "date": "2026-04-26",
+  "base_results": [
+    {
+      "decision_log_item": 219,
+      "artifact": "/tmp/and-live-distributed-ingress3-100k-soak60-reverted-32w-p1-20260426-114012",
+      "committed_tps": 85382.0,
+      "finding": "historical green p1 live topology"
+    },
+    {
+      "decision_log_item": 245,
+      "artifact": "/tmp/and-live-item219-topology-replay-100k-60s",
+      "committed_tps": 73618.0,
+      "finding": "item219 topology replay underdelivered because validator-1 endpoints were slow"
+    },
+    {
+      "decision_log_item": 246,
+      "finding": "validator-1 writer overprovision did not restore p1 delivery"
+    },
+    {
+      "decision_log_item": 247,
+      "artifact": "/tmp/and-live-247-no-v1-ingress-100k-60s",
+      "committed_tps": 66054.4,
+      "finding": "excluding validator-1 raised per-endpoint p1 target too high and regressed throughput"
+    }
+  ],
+  "purpose": "Recover green live throughput by testing the known 12-endpoint topology with pipeline depth 2 while preserving fail-fast request-error semantics and Mahi state-root correctness checks.",
+  "environment": {
+    "consensus_validators": [
+      "validator-1",
+      "validator-2",
+      "validator-3",
+      "validator-4"
+    ],
+    "loadgen_ingress_validators": [
+      "validator-1",
+      "validator-2",
+      "validator-3",
+      "validator-4"
+    ],
+    "ingress_ports": [
+      8645,
+      8646,
+      8647
+    ],
+    "endpoint_count": 12,
+    "writers_per_endpoint": 32,
+    "pipeline_depth": 2,
+    "strict_nonce_retry": false,
+    "fail_on_errors": true,
+    "batch_size": 8,
+    "target_rps_total": 100000,
+    "target_rps_per_endpoint": "8333 or 8334",
+    "deployed_binary_sha256": "dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd"
+  },
+  "planned_benchmark": {
+    "artifact": "/tmp/and-live-248-p2-fail-on-error-100k-60s",
+    "command": "LOADTEST_OUTPUT_DIR=/tmp/and-live-248-p2-fail-on-error-100k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=2 LOADTEST_STRICT_NONCE_RETRY=0 LOADTEST_FAIL_ON_ERRORS=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 100000 60"
+  },
+  "result": {
+    "artifact": "/tmp/and-live-248-p2-fail-on-error-100k-60s",
+    "measured_rps_total": 60590.2,
+    "committed_total": 3341264,
+    "committed_tps": 55687.7,
+    "ok_total": 3795440,
+    "nonce_err_total": 0,
+    "rpc_err_total": 0,
+    "net_err_total": 0,
+    "common_height": 221,
+    "block_hash_hex": "0x71aa4a8bcd91d55f828dcf0192fcee28650617518a32b05cc0b63a513eb4c813",
+    "state_root_hex": "0xa2debfeaa30de14e80eec58d405096f7394a60302aacf8efbff3e8777f45c1ca",
+    "pre_admitted_pools_drained": true,
+    "decision": "Binned. Pipeline depth 2 completed with zero request errors and correct state roots, but it lowered delivered load and committed TPS versus the p1 references. It is not a green recovery path."
+  },
+  "success_gate": {
+    "request_errors": 0,
+    "state_roots_match_across_all_four_validators": true,
+    "pre_admitted_pools_drained": true,
+    "committed_tps_green_floor": 85382.0,
+    "bin_on_any_nonce_rpc_or_network_error": true
+  },
+  "notes": [
+    "This is a canary, not a relaxed green run. Pipelined writers disable strict nonce retry because strict retry is p1-only, so fail-on-errors is mandatory.",
+    "If any endpoint reports nonce_err, rpc_err, or net_err, the run is binned regardless of committed TPS and the cluster must be wiped before the next attempt."
+  ]
+}

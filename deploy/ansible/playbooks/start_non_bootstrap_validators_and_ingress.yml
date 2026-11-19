@@ -1,0 +1,51 @@
+- name: Start non-bootstrap validators and ingress after seeded bootstrap
+  hosts: kombat_live_testnet
+  gather_facts: false
+  become: true
+  vars:
+    validator_service_name: "{{ and_chain_validator_service_name | default('kombat-chain') }}"
+    bootstrap_validator_host: "{{ and_chain_reset_bootstrap_validator_host | default('validator-1') }}"
+    ingress_service_names: "{{ and_chain_ingress_services | map(attribute='name') | list }}"
+    ingress_ports: "{{ and_chain_ingress_services | map(attribute='port') | list }}"
+  tasks:
+    - name: Start non-bootstrap validator services
+      ansible.builtin.systemd_service:
+        name: "{{ validator_service_name }}"
+        state: started
+      when: inventory_hostname != bootstrap_validator_host
+
+    - name: Wait for non-bootstrap validator RPC
+      ansible.builtin.shell: |
+        set -euo pipefail
+        curl --max-time 3 -sS -H 'content-type: application/json' \
+          --data '{"jsonrpc":"2.0","method":"kombat_chainInfo","params":{},"id":1}' \
+          http://127.0.0.1:{{ and_chain_validator_rpc_port }} | grep -q '"result"'
+      args:
+        executable: /bin/bash
+      register: start_non_bootstrap_validator_rpc_check
+      changed_when: false
+      retries: 30
+      delay: 2
+      until: start_non_bootstrap_validator_rpc_check.rc == 0
+      when: inventory_hostname != bootstrap_validator_host
+
+    - name: Start ingress services
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: started
+      loop: "{{ ingress_service_names }}"
+
+    - name: Wait for ingress RPC ports
+      ansible.builtin.shell: |
+        set -euo pipefail
+        curl --max-time 3 -sS -H 'content-type: application/json' \
+          --data '{"jsonrpc":"2.0","method":"kombat_chainInfo","params":{},"id":1}' \
+          http://127.0.0.1:{{ item }} | grep -q '"result"'
+      args:
+        executable: /bin/bash
+      register: start_ingress_rpc_check
+      changed_when: false
+      retries: 30
+      delay: 2
+      until: start_ingress_rpc_check.rc == 0
+      loop: "{{ ingress_ports }}"

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+source {{ and_chain_config_dir }}/{{ and_chain_validator_env_file | default(and_chain_validator_service_name | default('kombat-chain') ~ '.env') }}
+export KOMBAT_FEEDER_OPERATOR_TOKEN="${KOMBAT_OPERATOR_TOKEN:?}"
+
+now_ms="$(date +%s%3N)"
+cat > {{ feeder_price_file }} <<JSON
+[
+  {"adapter":"binance","asset":"BTC","mid_price_e8":{{ feeder_btc_price_e8 }},"received_at_ms":${now_ms},"source_seq":${now_ms}},
+  {"adapter":"okx","asset":"BTC","mid_price_e8":{{ feeder_btc_price_e8 | int + feeder_btc_spread_e8 | int }},"received_at_ms":${now_ms},"source_seq":${now_ms}},
+  {"adapter":"coinbase","asset":"BTC","mid_price_e8":{{ feeder_btc_price_e8 | int - feeder_btc_spread_e8 | int }},"received_at_ms":${now_ms},"source_seq":${now_ms}}
+]
+JSON
+
+exec {{ and_chain_install_root }}/bin/kombat_feeder \
+  --config {{ feeder_config_file }} \
+  --once \
+  --prices-json {{ feeder_price_file }} \
+  --feeder-id {{ feeder_id_hex }} \
+  --submit

@@ -1,0 +1,18 @@
+[package]
+name = "kombat-chain-consensus"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[lib]
+name = "kombat_chain_consensus"
+path = "src/lib.rs"
+
+[dependencies]
+borsh = { version = "1.5.1", features = ["derive"] }
+ed25519-dalek = "2.1.1"
+sha2 = "0.10.8"
+
+[lints]
+workspace = true

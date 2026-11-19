@@ -1,0 +1,159 @@
+{
+  "title": "0x26 Chain schedule, reset, and differential tests",
+  "prepared_on": "2026-11-17",
+  "code_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+  "test_revision": "7e85dfef2fb091f9a0ed98547e42137b32c6ceff",
+  "test_branch": "paper-tests-pre-hl2",
+  "production_code_changed": false,
+  "toolchain": "cargo 1.97.0, stable channel, locked dependency graph",
+  "sources": {
+    "anc/tests/paper_schedule.rs": "chain/crates/rpc/src/tests/paper_schedule.rs",
+    "anc/tests/paper_differential.rs": "chain/crates/node/src/tests/paper_differential.rs",
+    "anc/tests/paper-differential.sh": "chain/scripts/paper-differential.sh"
+  },
+  "commands": [
+    "cargo test --locked -p kombat-chain-rpc --lib tests::paper_schedule -- --nocapture --test-threads=1",
+    "chain/scripts/paper-differential.sh"
+  ],
+  "schedule_tests": {
+    "fixed_count_drain": {
+      "schedules": 351,
+      "batch_sizes": [
+        2,
+        4,
+        8
+      ],
+      "sequence_lengths": [
+        16,
+        37,
+        64
+      ],
+      "divergent_partitions": 0,
+      "divergent_heads": 0,
+      "drain": "implemented drain_ready_execution_for_batch"
+    },
+    "partial_flush_model": {
+      "schedules": 39,
+      "batch_size": 8,
+      "sequence_length": 64,
+      "divergent_partitions": 39,
+      "divergent_heads": 39,
+      "same_consumed_sequence": true,
+      "note": "Test-local model of the reverted rule. Not the April patch or binary."
+    },
+    "batch_size_mismatch": {
+      "batch_sizes": [
+        4,
+        8
+      ],
+      "sequence_length": 64,
+      "heights": {
+        "4": 16,
+        "8": 8
+      },
+      "same_consumed_sequence": true,
+      "heads_differ": true
+    },
+    "failed_verification": {
+      "schedules": 20,
+      "batch_size": 8,
+      "sequence_length": 64,
+      "failed_block": 20,
+      "executed_groups": 2,
+      "blocks_left_queued": 48
+    },
+    "limits": [
+      "Blocks carry no intents.",
+      "Queue-level simulation; no network."
+    ]
+  },
+  "reset_tests": {
+    "harness": "Existing four-validator in-process cluster; production reset_mahi_state_from_durable_head",
+    "rounds_before_reset": 14,
+    "rounds_after_reset": 30,
+    "repetitions": 3,
+    "pre_reset": {
+      "head_height": 4,
+      "queued_decided_blocks_per_validator": 5
+    },
+    "simultaneous_reset": {
+      "validators_reset": 4,
+      "common_height": 14,
+      "first_divergent_height": null,
+      "distinct_commit_log_hashes": 1
+    },
+    "staggered_reset": {
+      "validators_reset": 1,
+      "heights": [
+        16,
+        15,
+        16,
+        16
+      ],
+      "common_height": 15,
+      "first_divergent_height": 5,
+      "distinct_commit_log_hashes": 2,
+      "inspected_run": {
+        "reset_validator_blocks_produced_after_reset": 1,
+        "producer_skips_ancestor_quorum": 29
+      }
+    },
+    "limits": [
+      "In-process state reset, not a process restart from disk.",
+      "Four validators, not the three-validator deployment.",
+      "No client load."
+    ]
+  },
+  "path_differential": {
+    "scenarios": 400,
+    "steps": 2400,
+    "policies": 4,
+    "markets": 2,
+    "modes": {
+      "direct_path_on": {
+        "native_inplace": 1472,
+        "native": 867,
+        "native_empty": 61
+      },
+      "direct_path_off": {
+        "native": 2339,
+        "native_empty": 61
+      }
+    },
+    "fields_equal_on_all_steps": [
+      "outcome",
+      "height",
+      "head hash",
+      "state root",
+      "event root",
+      "body root",
+      "executor root",
+      "policy state",
+      "books",
+      "mandate metadata",
+      "collateral"
+    ],
+    "direct_path_steps_differing": {
+      "IntentRejected events absent": 203,
+      "rejected intents left in mempool": 179,
+      "intent statuses (cumulative digest)": 457
+    },
+    "all_steps_differing": {
+      "positions": 50,
+      "positions without last_fill_seq": 0
+    },
+    "scenarios_with_any_difference": 170,
+    "outcomes": {
+      "direct_path_on": {
+        "ok": 2400
+      },
+      "direct_path_off": {
+        "ok": 2400
+      }
+    },
+    "limits": [
+      "Unlisted markets; margin and leverage checks are not exercised.",
+      "No step returned an application error, so error paths are untested."
+    ]
+  }
+}

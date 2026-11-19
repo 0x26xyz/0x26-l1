@@ -1,0 +1,19 @@
+[package]
+name = "kombat-chain-network"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[lib]
+name = "kombat_chain_network"
+path = "src/lib.rs"
+
+[dependencies]
+borsh = { version = "1.6.1", features = ["derive"] }
+kombat-chain-consensus = { path = "../consensus" }
+serde = { version = "1.0.210", features = ["derive"] }
+toml = "0.8.19"
+
+[lints]
+workspace = true

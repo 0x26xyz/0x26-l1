@@ -1,0 +1,17 @@
+[Unit]
+Description=Kombat QuestDB-backed market-data API
+After=network-online.target {{ and_chain_questdb_service_name }}.service
+Wants=network-online.target
+Requires={{ and_chain_questdb_service_name }}.service
+
+[Service]
+Type=simple
+User={{ and_chain_user }}
+Group={{ and_chain_group }}
+Restart=always
+RestartSec=5
+EnvironmentFile={{ and_chain_market_data_env_file }}
+ExecStart={{ and_chain_install_root }}/bin/kombat_market_data
+
+[Install]
+WantedBy=multi-user.target

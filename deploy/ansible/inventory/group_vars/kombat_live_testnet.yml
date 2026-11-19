@@ -1,0 +1,358 @@
+ansible_user: root
+ansible_remote_tmp: /tmp/and-chain-ansible-tmp
+
+and_chain_chain_id: 7
+and_chain_operator_token: "{{ lookup('env', 'KOMBAT_OPERATOR_TOKEN') }}"
+and_chain_binary_path: "{{ lookup('env', 'KOMBAT_BINARY_PATH') | default(playbook_dir + '/../../../target-linux-x86_64/release/kombat_chain', true) }}"
+and_chain_market_data_binary_path: "{{ lookup('env', 'KOMBAT_MARKET_DATA_BINARY_PATH') | default(playbook_dir + '/../../../target-linux-x86_64/release/kombat_market_data', true) }}"
+and_chain_legacy_delegation_bridge_enabled: true
+
+and_chain_install_root: /opt/and-chain
+and_chain_config_dir: /etc/and-chain
+and_chain_state_dir: /var/lib/and-chain
+and_chain_state_backend: redb
+and_chain_mempool_fsync: sync
+and_chain_mempool_group_commit_ms: 10
+and_chain_user: and-chain
+and_chain_group: and-chain
+
+and_chain_market_data_hosts: "{{ lookup('env', 'KOMBAT_MARKET_DATA_HOSTS') | default('kombat_market_data', true) }}"
+and_chain_market_data_service_name: kombat-market-data
+and_chain_market_data_env_file: "{{ and_chain_config_dir }}/kombat-market-data.env"
+and_chain_market_data_bind_host: "{{ lookup('env', 'KOMBAT_MARKET_DATA_BIND_HOST') | default('0.0.0.0', true) }}"
+and_chain_market_data_port: "{{ lookup('env', 'KOMBAT_MARKET_DATA_PORT') | default('8787', true) }}"
+# Testnet rollout pin: market-data reads the same validator used by the MM and
+# taker bots while MAHI owner-relay/status convergence is still being hardened.
+and_chain_market_data_rpc_url: "{{ lookup('env', 'KOMBAT_MARKET_DATA_RPC_URL') | default('http://203.0.113.17:8545', true) }}"
+and_chain_market_data_source: "{{ lookup('env', 'KOMBAT_MARKET_DATA_SOURCE') | default('live-testnet-current', true) }}"
+and_chain_market_data_poll_ms: "{{ lookup('env', 'KOMBAT_MARKET_DATA_POLL_MS') | default('500', true) }}"
+and_chain_market_data_batch_limit: "{{ lookup('env', 'KOMBAT_MARKET_DATA_BATCH_LIMIT') | default('1000', true) }}"
+and_chain_market_data_intervals: "{{ lookup('env', 'KOMBAT_MARKET_DATA_INTERVALS') | default('1m,5m,15m,1h,1d', true) }}"
+and_chain_questdb_service_name: kombat-questdb
+and_chain_questdb_image: "{{ lookup('env', 'KOMBAT_QUESTDB_IMAGE') | default('questdb/questdb:8.2.3', true) }}"
+and_chain_questdb_container_name: kombat-questdb
+and_chain_questdb_data_dir: "{{ and_chain_state_dir }}/questdb"
+and_chain_questdb_http_port: "{{ lookup('env', 'KOMBAT_QUESTDB_HTTP_PORT') | default('9000', true) }}"
+and_chain_questdb_pg_port: "{{ lookup('env', 'KOMBAT_QUESTDB_PG_PORT') | default('8812', true) }}"
+and_chain_questdb_ilp_tcp_port: "{{ lookup('env', 'KOMBAT_QUESTDB_ILP_TCP_PORT') | default('9009', true) }}"
+
+and_chain_validator_rpc_port: 8545
+and_chain_ingress_services:
+  - name: kombat-chain-ingress
+    port: 8645
+and_chain_retired_ingress_services:
+  - kombat-chain-ingress2
+  - kombat-chain-ingress3
+
+# Redb-backed live testnet should leave headroom for RPC, snapshot bootstrap,
+# bots, and browser traffic. The old 50ms/5000-item cadence could starve RPC
+# during rolling restarts.
+and_chain_auto_network_round_interval_ms: 1000
+and_chain_auto_network_drive_interval_ms: 250
+and_chain_auto_network_max_items: 500
+and_chain_base_timeout_ms: 300
+and_chain_max_timeout_ms: 20000
+and_chain_max_timeout_exponent: 6
+and_chain_max_clock_skew_ms: 1000
+
+# Testnet rollout config. RFC027 MM/taker verification currently prioritizes
+# deterministic end-to-end execution over the higher-throughput multi-leader path.
+and_chain_mahi_commit_rule: mahi
+# Temporary: force single-leader MAHI while the RFC027 MM/taker path is being
+# hardened. The parser treats "1"/"true" as "enable default multileader", so
+# single-leader must be expressed as "0"/"false"/"off".
+and_chain_mahi_multileader: "0"
+# Testnet rollout pin: keep all payload frontiers visible to the validator-1
+# bot ingress path until sharded owner-relay/status convergence is proven under
+# the RFC027 MM + taker workload.
+and_chain_mahi_payload_sharding: "{{ lookup('env', 'KOMBAT_MAHI_PAYLOAD_SHARDING') | default('0', true) }}"
+and_chain_mahi_allow_idle_empty_rounds: "1"
+and_chain_mahi_observer_async_relay: "1"
+and_chain_network_submit_forwarding_enabled: true
+# Redb native-Mahi rollout: RFC 042 now persists chain-head and executor roots
+# separately. Operators can still set KOMBAT_MAHI_LEGACY_EXEC=1 as an emergency
+# compatibility pin, but resettable testnet should exercise native execution.
+and_chain_mahi_legacy_exec: "{{ lookup('env', 'KOMBAT_MAHI_LEGACY_EXEC') | default('0', true) }}"
+# Temporary: synchronous block broadcast keeps the resettable testnet easier to
+# reason about while we verify cross-validator intent/order convergence.
+and_chain_mahi_async_block_broadcast: "false"
+and_chain_mahi_merged_execution_batch: 8
+and_chain_mahi_owner_relay_redundancy: 2
+and_chain_mahi_owner_relay_lag_rounds: 256
+
+and_chain_faucet_k8s_namespace: "{{ lookup('env', 'KOMBAT_FAUCET_K8S_NAMESPACE') | default('pvp-platform', true) }}"
+and_chain_faucet_redis_secret_name: "{{ lookup('env', 'KOMBAT_FAUCET_REDIS_SECRET_NAME') | default('and-chain-faucet-redis-secret', true) }}"
+and_chain_faucet_redis_secret_key: "{{ lookup('env', 'KOMBAT_FAUCET_REDIS_SECRET_KEY') | default('REDIS_PASSWORD', true) }}"
+and_chain_faucet_redis_node_host: "{{ lookup('env', 'KOMBAT_FAUCET_REDIS_NODE_HOST') | default('203.0.113.11', true) }}"
+and_chain_faucet_redis_node_port: "{{ lookup('env', 'KOMBAT_FAUCET_REDIS_NODE_PORT') | default('31379', true) }}"
+and_chain_faucet_redis_url: "{{ lookup('env', 'KOMBAT_FAUCET_REDIS_URL') | default('', true) }}"
+and_chain_faucet_address_cooldown_secs: "{{ lookup('env', 'KOMBAT_FAUCET_ADDRESS_COOLDOWN_SECS') | default('86400', true) }}"
+and_chain_faucet_ip_window_secs: "{{ lookup('env', 'KOMBAT_FAUCET_IP_WINDOW_SECS') | default('3600', true) }}"
+and_chain_faucet_ip_max_claims: "{{ lookup('env', 'KOMBAT_FAUCET_IP_MAX_CLAIMS') | default('20', true) }}"
+and_chain_faucet_global_window_secs: "{{ lookup('env', 'KOMBAT_FAUCET_GLOBAL_WINDOW_SECS') | default('60', true) }}"
+and_chain_faucet_global_max_claims: "{{ lookup('env', 'KOMBAT_FAUCET_GLOBAL_MAX_CLAIMS') | default('1000', true) }}"
+
+and_chain_snapshot_timer_enabled: true
+and_chain_restart_services: true
+and_chain_bootstrap_empty_block_timestamp_ms: "{{ lookup('env', 'KOMBAT_BOOTSTRAP_EMPTY_BLOCK_TIMESTAMP_MS') | default((lookup('pipe', 'date +%s') | int * 1000), true) }}"
+and_chain_seed_timestamp_ms: "{{ lookup('env', 'KOMBAT_SEED_TIMESTAMP_MS') | default((and_chain_bootstrap_empty_block_timestamp_ms | int + 100), true) }}"
+and_chain_genesis_timestamp_ms: "{{ lookup('env', 'KOMBAT_GENESIS_TIMESTAMP_MS') | default((and_chain_bootstrap_empty_block_timestamp_ms | int - 100), true) }}"
+and_chain_reset_bootstrap_validator_host: validator-2
+and_chain_seed_initial_state_hosts: validator-2
+and_chain_seed_real_capital_demo_hosts: validator-2
+and_chain_validator_remote_bootstrap_enabled: true
+and_chain_local_bridge_mutations_enabled: false
+
+# LLM-trader example agent (RFC: docs/v1/rfcs).
+# Deterministic testnet-only owner/session keys — never reuse for non-testnet.
+and_chain_llm_trader_hosts: "{{ lookup('env', 'AND_LLM_TRADER_HOSTS') | default('loadgen-1', true) }}"
+and_chain_llm_trader_market_id: 7
+and_chain_llm_trader_account_id: 270101
+and_chain_llm_trader_policy_id: 27010101
+and_chain_llm_trader_evm_address_hex: "0x000000000000000000000000000000000041e1a5"
+and_chain_llm_trader_owner_secret_hex: "REDACTED_TESTNET_SECRET"
+and_chain_llm_trader_session_secret_hex: "REDACTED_TESTNET_SECRET"
+and_chain_llm_trader_code_hash_hex: "0x0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"
+# Resettable testnet takers submit visible IOC clips against the delegated MM
+# vault. Keep per-trade sizing below top-of-book depth so the background flow
+# makes candles without draining one side.
+and_chain_llm_trader_max_volume_per_day_usdc: 50000000
+and_chain_llm_trader_max_drawdown_bps: 500
+and_chain_llm_trader_max_intents_per_second: 1
+and_chain_llm_trader_max_intents_per_day: 1000
+and_chain_llm_trader_gas_budget_per_day_microusdc: 10000000
+and_chain_llm_trader_gas_refill_per_day_microusdc: 10000000
+and_chain_llm_trader_policy_ttl_ms: 604800000
+# BTC lot_size_microunits is 1, so 100,000 lots is 0.1 BTC.
+and_chain_llm_trader_max_trade_lots: 100000
+and_chain_llm_trader_max_position_lots: 100000
+and_chain_llm_trader_poll_interval_s: 15
+and_chain_llm_trader_openrouter_model: "deepseek/deepseek-chat"
+and_chain_llm_trader_testnet_taker_cadence_enabled: true
+and_chain_llm_trader_testnet_taker_size_lots: 100000
+and_chain_llm_trader_testnet_taker_every_n_holds: 1
+and_chain_llm_trader_run_fund: false
+and_chain_seed_llm_trader_accounts_enabled: true
+and_chain_llm_trader_seed_policy_usdc_micro: "10000000000000"
+and_chain_llm_trader_seed_isolated_collateral_micro: "1000000000000"
+and_chain_llm_trader_seed_accounts:
+  - market_id: 7
+    account_id: 270101
+    evm_address_hex: "0x000000000000000000000000000000000041e1a5"
+  - market_id: 8
+    account_id: 270102
+    evm_address_hex: "0x000000000000000000000000000000000041e1a6"
+  - market_id: 9
+    account_id: 270103
+    evm_address_hex: "0x000000000000000000000000000000000041e1a7"
+  - market_id: 10
+    account_id: 270104
+    evm_address_hex: "0x000000000000000000000000000000000041e1a8"
+  - market_id: 11
+    account_id: 270105
+    evm_address_hex: "0x000000000000000000000000000000000041e1a9"
+
+and_chain_seed_initial_state_enabled: true
+and_chain_seed_mm_liquidity_provider_enabled: true
+and_chain_seed_real_capital_demo_enabled: true
+and_chain_real_capital_demo_principal_account_id: 1844796
+and_chain_real_capital_demo_principal_owner_hex: "0x307832363a65766d3a763121fb1af79c5163ca0062f733a5184c831a8444e796"
+and_chain_real_capital_demo_principal_code_hash_hex: "0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"
+and_chain_real_capital_demo_principal_evm_address_hex: "0xfB1Af79c5163cA0062F733A5184c831a8444E796"
+and_chain_real_capital_demo_principal_policy_usdc_micro: "2000000000000"
+and_chain_real_capital_demo_initial_deposit_micro_usdc: "1000000000000"
+and_chain_real_capital_demo_mandate_owner_hex: "0x95270e4885e444198978929025d6e645114b737cc6e400afb2859b0a5c265801"
+and_chain_real_capital_demo_performance_share_units: 1000
+and_chain_real_capital_demo_crystallization_cadence_ms: 604800000
+and_chain_real_capital_demo_notice_period_ms: 86400000
+and_chain_real_capital_demo_agent_bond_micro_usdc: "5000000000"
+and_chain_real_capital_demo_per_principal_cap_micro_usdc: "2000000000000"
+and_chain_real_capital_demo_total_tvl_cap_micro_usdc: "5000000000000"
+# Permit the delegated MM to keep a venue-sized visible book against the
+# seeded 1M USDC vault. This is a mandate trading-notional cap, not TVL.
+and_chain_real_capital_demo_allowed_markets: [7, 8, 9, 10, 11]
+and_chain_real_capital_demo_mandate_max_notional_per_market_micro_usdc: "10000000000000"
+and_chain_real_capital_demo_description_uri: "ipfs://testnet-vault-260001"
+and_chain_real_capital_demo_description_hash_hex: "0x0909090909090909090909090909090909090909090909090909090909090909"
+and_chain_real_capital_demo_mandate_expires_after_ms: 2592000000
+# Testnet rollout pin: the infrastructure MM bot is a high-churn writer, so it
+# targets the active bootstrap validator directly. validator-1 is an ingress-only
+# memory process in the active-Mahi topology and must not be used as an
+# authoritative state source for delegated vault discovery or quote submission.
+and_chain_liquidity_bot_rpc_url: "http://203.0.113.17:8545"
+and_chain_liquidity_bot_order_submission_mode: "intent"
+and_chain_liquidity_bot_maker_account_id: 260001
+and_chain_liquidity_bot_use_demo_delegation: true
+# Use per-lane child policies for the infrastructure MM bot. The bot quotes many
+# lanes concurrently; sharing the mandate-generated parent policy causes nonce
+# contention and leaves the book empty.
+and_chain_liquidity_bot_create_lane_policies: true
+and_chain_liquidity_bot_market_ids: "7,8,9,10,11"
+# Testnet-only deterministic owner/session keys for the resettable MM bot.
+and_chain_liquidity_bot_maker_owner_secret_hex: "REDACTED_TESTNET_SECRET"
+and_chain_liquidity_bot_maker_session_secret_hex: "REDACTED_TESTNET_SECRET"
+and_chain_liquidity_bot_maker_session_pubkey_hex: "0xb7d65f3f07b26e2bf503aea336cf429b2a045478cbfbf1bff6409241eb6d0857"
+and_chain_liquidity_bot_maker_owner_hex: "0x95270e4885e444198978929025d6e645114b737cc6e400afb2859b0a5c265801"
+and_chain_liquidity_bot_maker_policy_id: 26000101
+and_chain_liquidity_bot_maker_code_hash_hex: "0x0909090909090909090909090909090909090909090909090909090909090909"
+and_chain_liquidity_bot_maker_evm_address_hex: "0x000000000000000000000000000000000003f7a1"
+and_chain_liquidity_bot_taker_account_id: 260002
+and_chain_liquidity_bot_taker_owner_secret_hex: "REDACTED_TESTNET_SECRET"
+and_chain_liquidity_bot_taker_session_secret_hex: "REDACTED_TESTNET_SECRET"
+and_chain_liquidity_bot_taker_owner_hex: "0x949a3337fd49d8f19ce0973341b89d93f74334ef5f9cc8d14a358b10565402fc"
+and_chain_liquidity_bot_taker_policy_id: 26000201
+and_chain_liquidity_bot_taker_code_hash_hex: "0x0909090909090909090909090909090909090909090909090909090909090909"
+and_chain_liquidity_bot_taker_evm_address_hex: "0x000000000000000000000000000000000003f7a2"
+and_chain_liquidity_bot_mm_policy_usdc: "10000000000000"
+and_chain_liquidity_bot_taker_policy_usdc: "10000000000000"
+and_chain_liquidity_bot_seed_policy_usdc: "0"
+and_chain_liquidity_bot_seed_collateral: "0"
+and_chain_liquidity_bot_quote_interval_ms: 60000
+and_chain_liquidity_bot_quote_concurrency: 2
+and_chain_liquidity_bot_intent_submit_delay_ms: 2000
+and_chain_liquidity_bot_quote_refresh_every_cycles: 60
+and_chain_liquidity_bot_quote_refresh_price_move_bps: 10
+and_chain_liquidity_bot_maker_isolated_collateral: "1000000000000"
+and_chain_liquidity_bot_taker_isolated_collateral: "1000000000000"
+and_chain_liquidity_bot_spread_bps: 5
+and_chain_liquidity_bot_quote_levels: 10
+and_chain_liquidity_bot_level_step_bps: 5
+and_chain_liquidity_bot_level_size_growth_bps: 2500
+# BTC market lot_size_microunits is 1, so one lot is one micro-BTC.
+# Testnet delegated MM is intentionally capitalized around 1M USDC so the
+# public book behaves like a venue, not a tiny retail vault.
+and_chain_liquidity_bot_maker_quantity_lots: 500000
+and_chain_liquidity_bot_policy_max_volume_per_day_micro_usdc: "1000000000000000000"
+and_chain_liquidity_bot_intent_ttl_ms: 600000
+and_chain_liquidity_bot_intent_status_timeout_ms: 300000
+and_chain_liquidity_bot_collateral: "1000000000000"
+and_chain_liquidity_bot_auto_collateral: "1"
+and_chain_liquidity_bot_collateral_buffer_bps: "20000"
+and_chain_liquidity_bot_mm_min_quote_size_micro_usdc: "10000000000"
+
+# Funding-arb bot fleet (RFC 045 reference implementation). All bots
+# share the existing testnet taker account/keys but isolate their
+# rate-limit / volume cap surface via per-bot policies. Each bot
+# fires when |mark - index| / index >= threshold_bps and pushes mark
+# back toward index with an IOC sized to size_lots.
+and_chain_funding_arb_bots:
+  - id: tight
+    policy_id: 26000301
+    threshold_bps: 5
+    size_lots: 100000
+    poll_interval_ms: 5000
+    policy_max_volume_per_day_micro_usdc: "1000000000000000000"
+  - id: medium
+    policy_id: 26000302
+    threshold_bps: 15
+    size_lots: 200000
+    poll_interval_ms: 5000
+    policy_max_volume_per_day_micro_usdc: "1000000000000000000"
+  - id: loose
+    policy_id: 26000303
+    threshold_bps: 30
+    size_lots: 500000
+    poll_interval_ms: 5000
+    policy_max_volume_per_day_micro_usdc: "1000000000000000000"
+    # Loose bot also runs the noise component so candle wicks and
+    # micro-volume keep ticking when mark is sitting inside the
+    # tight/medium thresholds.
+    noise_size_lots: 250000
+    noise_probability_pct: 25
+
+and_chain_seed_perpetual_markets:
+  - market_id: 7
+    base_symbol: BTC
+    quote_asset: 1
+    oracle_feed_id: 77
+    initial_margin_bps: 1000
+    maintenance_margin_bps: 500
+    max_leverage: 20
+    lot_size_microunits: 1
+    tick_size_bps: 100
+    funding_interval_ms: 3600000
+    oracle_max_staleness_ms: 30000
+    breaker_price_band_bps: 500
+    oracle_min_sources: 2
+    oracle_min_confidence: 50
+    oracle_min_samples: 3
+    oracle_feeder_ids_hex:
+      - "0x0101010101010101010101010101010101010101010101010101010101010101"
+      - "0x0202020202020202020202020202020202020202020202020202020202020202"
+      - "0x0303030303030303030303030303030303030303030303030303030303030303"
+  - market_id: 8
+    base_symbol: ETH
+    quote_asset: 1
+    oracle_feed_id: 78
+    initial_margin_bps: 1000
+    maintenance_margin_bps: 500
+    max_leverage: 20
+    lot_size_microunits: 1
+    tick_size_bps: 100
+    funding_interval_ms: 3600000
+    oracle_max_staleness_ms: 30000
+    breaker_price_band_bps: 500
+    oracle_min_sources: 2
+    oracle_min_confidence: 50
+    oracle_min_samples: 3
+    oracle_feeder_ids_hex:
+      - "0x0101010101010101010101010101010101010101010101010101010101010101"
+      - "0x0202020202020202020202020202020202020202020202020202020202020202"
+      - "0x0303030303030303030303030303030303030303030303030303030303030303"
+  - market_id: 9
+    base_symbol: SOL
+    quote_asset: 1
+    oracle_feed_id: 79
+    initial_margin_bps: 1000
+    maintenance_margin_bps: 500
+    max_leverage: 20
+    lot_size_microunits: 1
+    tick_size_bps: 100
+    funding_interval_ms: 3600000
+    oracle_max_staleness_ms: 30000
+    breaker_price_band_bps: 500
+    oracle_min_sources: 2
+    oracle_min_confidence: 50
+    oracle_min_samples: 3
+    oracle_feeder_ids_hex:
+      - "0x0101010101010101010101010101010101010101010101010101010101010101"
+      - "0x0202020202020202020202020202020202020202020202020202020202020202"
+      - "0x0303030303030303030303030303030303030303030303030303030303030303"
+  - market_id: 10
+    base_symbol: DOGE
+    quote_asset: 1
+    oracle_feed_id: 80
+    initial_margin_bps: 1000
+    maintenance_margin_bps: 500
+    max_leverage: 20
+    lot_size_microunits: 1
+    tick_size_bps: 100
+    funding_interval_ms: 3600000
+    oracle_max_staleness_ms: 30000
+    breaker_price_band_bps: 500
+    oracle_min_sources: 2
+    oracle_min_confidence: 50
+    oracle_min_samples: 3
+    oracle_feeder_ids_hex:
+      - "0x0101010101010101010101010101010101010101010101010101010101010101"
+      - "0x0202020202020202020202020202020202020202020202020202020202020202"
+      - "0x0303030303030303030303030303030303030303030303030303030303030303"
+  - market_id: 11
+    base_symbol: XRP
+    quote_asset: 1
+    oracle_feed_id: 81
+    initial_margin_bps: 1000
+    maintenance_margin_bps: 500
+    max_leverage: 20
+    lot_size_microunits: 1
+    tick_size_bps: 100
+    funding_interval_ms: 3600000
+    oracle_max_staleness_ms: 30000
+    breaker_price_band_bps: 500
+    oracle_min_sources: 2
+    oracle_min_confidence: 50
+    oracle_min_samples: 3
+    oracle_feeder_ids_hex:
+      - "0x0101010101010101010101010101010101010101010101010101010101010101"
+      - "0x0202020202020202020202020202020202020202020202020202020202020202"
+      - "0x0303030303030303030303030303030303030303030303030303030303030303"

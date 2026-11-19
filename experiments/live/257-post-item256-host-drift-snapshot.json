@@ -1,0 +1,110 @@
+{
+  "id": 257,
+  "name": "post-item256-host-drift-snapshot",
+  "status": "kept diagnostic",
+  "date": "2026-04-26",
+  "base_results": [
+    {
+      "decision_log_item": 251,
+      "committed_tps": 77666.8,
+      "finding": "same binary/config was green enough to be the clean live reference"
+    },
+    {
+      "decision_log_item": 256,
+      "committed_tps": 25380.6,
+      "finding": "same binary/config no longer reproduces; validator-4 ingress collapsed and Mahi pools did not drain"
+    }
+  ],
+  "hypothesis": "The post-item256 regression is caused by live host/runtime drift rather than code. Capturing an enriched environment snapshot immediately after the failed replay should expose host-local differences, especially on validator-4 where endpoint delivery collapsed and compat lock wait spiked.",
+  "files": [
+    "chain/deploy/ansible/playbooks/capture_env.yml",
+    "chain/experiments/live/257-post-item256-host-drift-snapshot.json",
+    "chain/THROUGHPUT_DECISION_LOG.md"
+  ],
+  "snapshot": {
+    "artifact_dir": "/tmp/and-live-env-snapshot-257-post-item256-dd022982",
+    "binary_sha256": "dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd",
+    "reference_snapshot": "/tmp/and-live-env-snapshot-250-current-dd022982",
+    "archives": [
+      {
+        "validator": "validator-1",
+        "path": "/tmp/and-live-env-snapshot-257-post-item256-dd022982/validator-1.tgz",
+        "sha256": "308edadc185fdab60e5bb78216064a2ecc541cfe63fe4e258a7199a8b1fc8d2c"
+      },
+      {
+        "validator": "validator-2",
+        "path": "/tmp/and-live-env-snapshot-257-post-item256-dd022982/validator-2.tgz",
+        "sha256": "2316ce23e06988666a94f5567c794341894f206ca39d1d19b3b3f0e2a420379c"
+      },
+      {
+        "validator": "validator-3",
+        "path": "/tmp/and-live-env-snapshot-257-post-item256-dd022982/validator-3.tgz",
+        "sha256": "72e49e7d4e7695ff33d688fa753a5ad637476678577a588c7a0bb4ecf7af9e13"
+      },
+      {
+        "validator": "validator-4",
+        "path": "/tmp/and-live-env-snapshot-257-post-item256-dd022982/validator-4.tgz",
+        "sha256": "2dfdd61a31b37b2cd2512b599712474b92d77350edc757a4e1ab9210f271f171"
+      }
+    ]
+  },
+  "planned_command": "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) KOMBAT_BINARY_PATH=/tmp/kombat_chain-live-dd022982 KOMBAT_SNAPSHOT_DIR=/tmp/and-live-env-snapshot-257-post-item256-dd022982 .venv/bin/ansible-playbook playbooks/capture_env.yml",
+  "actual_command": "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) KOMBAT_BINARY_PATH=/tmp/kombat_chain-live-dd022982 KOMBAT_SNAPSHOT_DIR=/tmp/and-live-env-snapshot-257-post-item256-dd022982 .venv/bin/ansible-playbook playbooks/capture_env.yml",
+  "analysis": {
+    "summary": "The item251 binary and deployed service config are still consistent, but the live hosts no longer behave symmetrically. Validator-4 is the main outlier: it accepts far less ingress and reports much higher post-load Mahi verify/accept/commit latency while v2/v3 stay comparatively healthy.",
+    "correctness_after_item256": {
+      "commit_log_hash_hex": "0xa5a43f1e94f7aa27d919281f479c3b0f882daef8ba7d4258c428668c3001f8c0",
+      "committed_block_count": 1216,
+      "executed_intent_count": 3965000,
+      "all_validators_match": true
+    },
+    "post_run_mahi_metrics": [
+      {
+        "validator": "validator-1",
+        "sigverify_p50_p90_max_ms": [164, 307, 600],
+        "inbound_accept_p90_max_ms": [13, 87],
+        "commit_execution_batch_p50_p90_max_ms": [148, 224, 302],
+        "kombat_chain_cpu_usage_nsec": 591524393000,
+        "main_process_cpu_percent_snapshot": 44.6
+      },
+      {
+        "validator": "validator-2",
+        "sigverify_p50_p90_max_ms": [135, 196, 372],
+        "inbound_accept_p90_max_ms": [4, 9],
+        "commit_execution_batch_p50_p90_max_ms": [133, 183, 205],
+        "kombat_chain_cpu_usage_nsec": 252084480000,
+        "main_process_cpu_percent_snapshot": 19.0
+      },
+      {
+        "validator": "validator-3",
+        "sigverify_p50_p90_max_ms": [135, 208, 392],
+        "inbound_accept_p90_max_ms": [4, 24],
+        "commit_execution_batch_p50_p90_max_ms": [119, 179, 227],
+        "kombat_chain_cpu_usage_nsec": 268166019000,
+        "main_process_cpu_percent_snapshot": 20.2
+      },
+      {
+        "validator": "validator-4",
+        "sigverify_p50_p90_max_ms": [202, 410, 743],
+        "inbound_accept_p90_max_ms": [52, 257],
+        "commit_execution_batch_p50_p90_max_ms": [202, 316, 1466],
+        "kombat_chain_cpu_usage_nsec": 783025910000,
+        "main_process_cpu_percent_snapshot": 59.1
+      }
+    ],
+    "excluded_causes": [
+      "No code diff exists between the item251 deploy surfaces and the item256 replay deploy surfaces.",
+      "All active chain and ingress services report zero restarts, no CPU quota, no memory cap, and LimitNOFILE=1048576.",
+      "Extra ingress4-ingress6 env files remain on disk but their services are absent or inactive.",
+      "NIC drop counters and post-run vmstat do not show an obvious network-drop or steal-time explanation."
+    ],
+    "security_followup": "capture_env.yml now redacts KOMBAT_BOOTSTRAP_BEARER_TOKEN in addition to KOMBAT_OPERATOR_TOKEN for future snapshots."
+  },
+  "success_criteria": {
+    "snapshot_archives_present": true,
+    "operator_token_redacted_or_absent": true,
+    "future_bootstrap_bearer_token_redacted": true,
+    "archives_include_enriched_host_stats": true,
+    "analysis_identifies_or_excludes_validator4_host_local_drift": true
+  }
+}

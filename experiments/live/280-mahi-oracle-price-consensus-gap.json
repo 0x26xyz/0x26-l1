@@ -1,0 +1,137 @@
+{
+  "id": 280,
+  "title": "MAHI intent replay uses local oracle prices outside consensus",
+  "date": "2026-05-04",
+  "status": "oracle pinning committed; merged-oracle stale-overwrite regression fixed locally; redeploy pending",
+  "history_ingested": {
+    "live_entries": "245-279",
+    "local_entries": "266-267",
+    "non_json_entries": [
+      "chain/experiments/live/252-six-ingress-topology.vars.yml",
+      "chain/experiments/live/260-packed-v4-on-v3-hosts.txt"
+    ],
+    "required_context": "This entry was written after re-ingesting the full experiments history and after item 279 made broad local MAHI tests usable again. Item 277 remains the live failure handoff; this item narrows its primary hypothesis to the oracle-price consensus gap."
+  },
+  "finding": {
+    "summary": "MAHI blocks carry consensus-agreed intents, faucets, delegation actions, and market-maker program actions, but not the oracle prices used to evaluate those intents.",
+    "smoking_gun": "apply_mahi_committed_block invokes commit_block_intents_preverified_with_stats with &self.market_marks and &self.market_index_prices. Those maps are mutated by kombat_submitOraclePrices / submit_oracle_price_batch / update_market_index_price / update_market_mark_price on each validator outside MAHI consensus.",
+    "why_roots_can_match": "A resting maker order can be accepted on one validator and rejected on another due to different local marks without changing executor committed_entries. That leaves committed_state_root_hex equal while order_books, mahi.state_hash_hex, and UI read models diverge.",
+    "why_state_hash_can_diverge_without_trading": "market_marks include timestamp_ms, and oracle submissions arrive at each validator independently. If mahi.state_hash_hex covers market_marks, validators can diverge even before a trade executes."
+  },
+  "mutation_audit_summary": {
+    "order_books_struct_replace": "Clean for the audited paths: struct replacement happens inside install_prepared_block_state, install_mahi_committed_block_state, and apply_external_block.",
+    "order_books_direct_mutation": "cancel_order and replace_order mutate order_books/resting_order_mandates outside consensus via legacy RPC surface. Not the current MM/taker path, but still a divergence vector.",
+    "mandates": "create_mandate mutates mandates; caller path still needs separate audit before exposing any direct multi-validator write surface.",
+    "runtime_events": "Non-deterministic by design: local admission rejections, expiry sweeps, oracle updates, and RPC surfaces push local events. Any consensus equality hash must not include local-only runtime events."
+  },
+  "fix_scope": {
+    "chosen_path": "Prototype the smallest consensus-correct fix before a larger RFC rewrite.",
+    "scope": [
+      "Add block-carried oracle observations to MAHI/block replay so the leader pins the mark/index prices used for intent evaluation.",
+      "Apply those block-carried prices before evaluating intents during MAHI block replay.",
+      "Use the same pinned maps for commit_block_intents_preverified_with_stats instead of each validator's local oracle maps.",
+      "Add a regression test where proposer and follower start with different local marks but apply the same MAHI block and converge on orderbook/state."
+    ],
+    "explicitly_out_of_scope_for_this_slice": [
+      "Full oracle-submission mempool/gossip design.",
+      "Decommissioning kombat_submitOraclePrices, kombat_cancelOrder, kombat_replaceOrder, kombat_createAccount, or kombat_submitOwnerCall.",
+      "Changing production bot sizing or UI behavior.",
+      "Claiming live RFC027 MM/taker/candle path fixed before one maker/taker fill is equal across validators and visible in market-data candles."
+    ]
+  },
+  "success_criteria": [
+    "A MAHI block carries the oracle mark/index prices used for replay in its signed payload.",
+    "A test with different local validator oracle maps commits the same MAHI block and produces equal orderbook/read-model results.",
+    "Existing MAHI tests still pass.",
+    "Experiment 280 is updated with validation before any deployment."
+  ],
+  "implemented_slice": {
+    "consensus_payload": "MahiBlock now carries oracle_prices in the signed payload. BlockItem also has OraclePrice markers so committed block bodies are self-describing.",
+    "producer_path": "MahiProducerSnapshot includes the current local oracle mark/index payload. maybe_run_mahi_round signs that payload into the produced block when there is real work to commit.",
+    "replay_path": "MAHI replay builds pinned mark/index maps from the block oracle payload and uses those maps for funding, positions-after-funding, intent filtering, and commit_block_intents_preverified_with_stats.",
+    "external_block_path": "External block apply reads BlockItem::OraclePrice markers before funding/intent replay so the same self-contained block semantics apply outside the direct MAHI helper.",
+    "fallback": "Blocks without oracle_prices keep the old local-map behavior for backward-compatible tests and empty/legacy blocks. This is acceptable only for non-trading legacy blocks during the resettable testnet phase.",
+    "not_production_suitable_yet": "Non-MAHI normal network block production still does not emit oracle price markers in this slice. The live testnet path is MAHI; any future non-MAHI trading deployment must either emit BlockItem::OraclePrice from normal producers or reject trading blocks without oracle markers."
+  },
+  "validation": {
+    "new_regression": "tests::mahi_committed_block_uses_pinned_oracle_prices_for_intent_replay creates proposer/follower engines with different local oracle maps, commits the same MAHI block with proposer-pinned prices, and asserts equal body, follower mark overwrite, and matching resting orders.",
+    "commands_passed": [
+      "cargo test -p kombat-chain-consensus mahi --manifest-path chain/Cargo.toml",
+      "cargo test -p kombat-chain-node mahi --manifest-path chain/Cargo.toml",
+      "cargo test -p kombat-chain-rpc mahi --manifest-path chain/Cargo.toml"
+    ],
+    "post_rustfmt_result": "The focused consensus, node, and RPC MAHI suites all pass after formatting. Node MAHI coverage is now 13 tests including the pinned-oracle replay regression and the merged-oracle newest-observation regression.",
+    "remaining_before_deploy": [
+      "Run a live/smoke validator check with one maker/taker fill and confirm all validators agree on orderbook and status, not just committed_state_root_hex."
+    ]
+  },
+  "deployment_attempt_2026_05_04": {
+    "history_reingested_before_followup_change": {
+      "live_entries": "245-280",
+      "local_entries": "266-267",
+      "command": "cat $(find chain/experiments -type f | sort)"
+    },
+    "binaries_built": {
+      "kombat_chain_sha256": "6262d5282aef10b474ac35aec4456ff6a3bce83d97cef579fc74bd96b0ed6dff",
+      "kombat_market_data_sha256": "a83e86408899940a1a8a5ff4d08bdce4292389e6d6f7ee4b2cbd7f82d733a727",
+      "kombat_mm_bot_sha256": "87e34dd9eccf75b011c6bfbb9a47ad9c302ff118455ccae11b9ebb6bda44099f"
+    },
+    "partial_deploy_result": "deploy.yml installed the new kombat_chain binary and validator env on all four validators. reset_seed_and_start_perps_demo.yml reset QuestDB, cleared faucet limiter keys, reset /var/lib/and-chain, seeded markets/accounts/collateral on validator-1, then failed restarting from bootstrap-seeded.snapshot.",
+    "blocker": {
+      "symptom": "kombat_chain panicked at startup with: failed to load snapshot from /var/lib/and-chain/snapshots/bootstrap-seeded.snapshot: Unexpected length of input",
+      "root_cause": "kombat_saveSnapshot now writes RFC042 logical snapshots with K26S magic, but KOMBAT_LOAD_SNAPSHOT_PATH startup still called SingleNodeEngine::load_snapshot_file as a legacy PersistedSingleNodeEngineSnapshot borsh blob loader.",
+      "fix_required": "Make the startup snapshot loader detect LOGICAL_SNAPSHOT_MAGIC and hydrate through the RFC042 logical snapshot bridge, while preserving legacy borsh snapshot support."
+    },
+    "persistence_reset_note": "Current reset_state.yml removes the whole /var/lib/and-chain directory, so it wipes any durable backend placed under and_chain_state_dir. If future durable persistence moves files outside that tree, reset playbooks must explicitly wipe that backend/WAL path too."
+  },
+  "live_followup_2026_05_04": {
+    "history_reingested_before_change": {
+      "live_entries": "245-280",
+      "local_entries": "266-267",
+      "command": "cat chain/experiments/live/245-275... plus chain/experiments/live/276-280 and chain/experiments/local/266-267"
+    },
+    "live_symptom_after_reset": "Feeder logs and kombat_listEvents showed fresh mark_price_updated/index_price_updated runtime events, while kombat_getMarketState for market 7 still reported old mark/index timestamps and stale_market_data. LLM taker intents stayed pending with pending_reason=stale_market_data, so candles stayed empty because no fills were committing.",
+    "missed_test_shape": "The original pinned-oracle test covered deterministic replay with different local oracle maps. It did not cover continuous live oracle ingestion plus merged MAHI execution where multiple blocks in the merged batch carry observations for the same market.",
+    "root_cause_refinement": "Merged MAHI execution collected oracle payloads from multiple MAHI blocks and preserved body order. oracle_price_maps_for_mahi_block and apply_block_oracle_price_items used last-wins insertion by body order, so a stale observation that appeared later in the merged batch could overwrite a fresher observation. The single-block MAHI path and legacy merged fallback also still passed self.market_marks/self.market_index_prices into commit_block_intents_preverified_with_stats instead of the pinned maps.",
+    "code_fix": [
+      "Added newest-timestamp compaction for BlockOraclePrice observations per market and per mark/index side.",
+      "MAHI single-block and merged bodies now emit compacted oracle markers rather than duplicate per-block observations for the same market.",
+      "apply_block_oracle_price_items now applies the newest observation from the committed block body instead of last-by-body-order.",
+      "Single-block MAHI and legacy merged fallback now pass the pinned market_marks/market_index_prices into commit_block_intents_preverified_with_stats."
+    ],
+    "automation_followup": [
+      "reset_seed_and_start_perps_demo.yml now imports deploy_llm_trader_fleet.yml so a full wipe also re-seeds and restarts the five Python taker bots instead of leaving old services running against missing policies.",
+      "The Python SDK now exposes wait_for_policy, and the llm-trader bootstrap waits for the minted policy to be visible before returning. This prevents the service from starting immediately after setup and reading unknown_policy while owner-call state is still catching up."
+    ],
+    "new_regression": "tests::mahi_merged_oracle_payload_keeps_newest_observation_per_market applies a merged MAHI batch where a fresh oracle observation is followed by a stale observation for the same market and asserts the committed block body and engine maps retain the fresh observation.",
+    "commands_passed": [
+      "rustfmt --edition 2021 chain/crates/node/src/lib.rs",
+      "cargo test -p kombat-chain-node mahi_merged_oracle_payload_keeps_newest_observation_per_market --manifest-path chain/Cargo.toml -- --nocapture",
+      "cargo test -p kombat-chain-node mahi --manifest-path chain/Cargo.toml",
+      "cargo test -p kombat-chain-consensus mahi --manifest-path chain/Cargo.toml",
+      "cargo test -p kombat-chain-rpc mahi --manifest-path chain/Cargo.toml",
+      "PYTHONPATH=chain/sdk/python python3 -m unittest chain/sdk/python/tests/test_client.py",
+      "PYTHONPATH=chain/examples/python/llm-trader:chain/sdk/python python3 -m unittest discover -s chain/examples/python/llm-trader/tests"
+    ],
+    "deployment_gate": "After redeploy/reset, verify kombat_getMarketState mark_price_stale=false for markets 7-11, LLM taker pending_reason no longer stays stale_market_data, at least one fill appears in kombat_getTradeHistory, and market-data candles return non-empty rows.",
+    "testnet_policy_followup_2026_05_04": {
+      "live_symptom": "After the oracle consensus fix was deployed, ETH/SOL/DOGE/XRP began producing fills/candles but BTC market 7 remained empty. The BTC taker logs showed every resubmission rejected with daily_volume_exceeded.",
+      "root_cause": "The resettable-testnet LLM taker was configured for 100000 lots per clip while the policy daily notional cap was still 5000 USDC. A BTC-sized clip exceeded the policy before it could create visible candles.",
+      "config_fix": "Raised and_chain_llm_trader_max_volume_per_day_usdc to 250000 in both kombat_live_testnet and kombat_loadgen group vars so seeded policy creation and rendered loadgen service environments agree.",
+      "validation_required": "A reset/reseed is required for existing seeded policies to pick up the higher cap. The post-reset gate remains: all five markets must show fresh oracle state, non-empty trade history, and non-empty 1m candles.",
+      "post_reset_validation": {
+        "reset_result": "reset_seed_and_start_perps_demo.yml completed successfully after routing Ansible temp/control paths under /tmp. Recap: loadgen-1 ok=151 changed=36 failed=0; validator-1 ok=49 changed=15 failed=0; validators 2-4 ok=20 changed=9 failed=0.",
+        "rendered_env": "All five LLM trader env files on loadgen-1 contain AND_MAX_VOLUME_PER_DAY_USDC=250000.",
+        "candles": "After a short post-reset wait, market-data returned non-empty 1m candles for markets 7, 8, 9, 10, and 11. BTC market 7 had timestamp_ms=1777887360000, volume_lots=100000, trade_count=1.",
+        "consensus_spot_check": "kombat_getOrderBook depth=1 for BTC market 7 matched across all four validators: bid price_ticks=7975883006028 lots=14800000 and ask price_ticks=7983862878971 lots=14900000.",
+        "remaining_caveat": "Short stale_market_data pending windows still appear around service startup and oracle cadence boundaries, but they clear and do not currently block fills. The production-quality gate should still become an automated post-deploy smoke check rather than a manual query sequence."
+      }
+    }
+  },
+  "do_not_repeat": [
+    "Do not treat submitted oracle RPC success as consensus.",
+    "Do not let local oracle timestamp_ms leak into MAHI replay decisions.",
+    "Do not call committed_state_root equality a trading-stack success signal unless orderbook, positions, trade history, runtime events, and MAHI state hash are also checked.",
+    "Do not deploy a reset flow that saves logical snapshots unless the startup loader can read the same logical snapshot format."
+  ]
+}

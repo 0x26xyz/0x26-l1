@@ -1,0 +1,12 @@
+[Unit]
+Description=& chain operator snapshot save
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=and-chain
+Group=and-chain
+WorkingDirectory=/opt/and-chain
+EnvironmentFile=/etc/and-chain/kombat-chain.env
+ExecStart=/opt/and-chain/scripts/save_snapshot.sh

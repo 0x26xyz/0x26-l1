@@ -1,0 +1,16 @@
+[Unit]
+Description=Kombat QuestDB market-data store
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=simple
+User=root
+Restart=always
+RestartSec=5
+ExecStartPre=-/usr/bin/docker rm -f {{ and_chain_questdb_container_name }}
+ExecStart=/usr/bin/docker run --rm --name {{ and_chain_questdb_container_name }} -p 127.0.0.1:{{ and_chain_questdb_http_port }}:9000 -p 127.0.0.1:{{ and_chain_questdb_pg_port }}:8812 -p 127.0.0.1:{{ and_chain_questdb_ilp_tcp_port }}:9009 -v {{ and_chain_questdb_data_dir }}:/var/lib/questdb {{ and_chain_questdb_image }}
+ExecStop=/usr/bin/docker stop {{ and_chain_questdb_container_name }}
+
+[Install]
+WantedBy=multi-user.target

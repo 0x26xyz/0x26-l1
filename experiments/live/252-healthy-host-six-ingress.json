@@ -1,0 +1,104 @@
+{
+  "id": 252,
+  "name": "healthy-host-six-ingress",
+  "status": "binned",
+  "date": "2026-04-26",
+  "base_results": [
+    {
+      "decision_log_item": 219,
+      "committed_tps": 85382.0,
+      "finding": "known green live reference"
+    },
+    {
+      "decision_log_item": 251,
+      "committed_tps": 77666.8,
+      "finding": "v2/v3 ingress endpoints hit ~8.33k RPS target; v1 and v4 underdelivered"
+    }
+  ],
+  "hypothesis": "The current TPS loss is ingress-host delivery imbalance, not consensus throughput. Item 251 proved validator-2 and validator-3 can each sustain the item-219 per-endpoint target (~8.33k RPS) on three ingress services, while validator-1 and validator-4 underdeliver. Adding three more ingress services and sending load only to validator-2 and validator-3 gives twelve healthy endpoints at the same per-endpoint target as item 219 while all four hosts remain consensus validators.",
+  "files": [
+    "chain/experiments/live/252-six-ingress-topology.vars.yml",
+    "chain/experiments/live/252-healthy-host-six-ingress.json",
+    "chain/THROUGHPUT_DECISION_LOG.md"
+  ],
+  "environment_controls": {
+    "deployed_binary_path": "/tmp/kombat_chain-live-dd022982",
+    "deployed_binary_sha256": "dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd",
+    "ansible_extra_vars": "chain/experiments/live/252-six-ingress-topology.vars.yml",
+    "loadtest_validator_names": [
+      "validator-2",
+      "validator-3"
+    ],
+    "ingress_ports": [
+      8645,
+      8646,
+      8647,
+      8648,
+      8649,
+      8650
+    ],
+    "endpoint_count": 12,
+    "writers_per_endpoint": 32,
+    "target_rps_per_endpoint": 8333.333333333334
+  },
+  "planned_commands": [
+    {
+      "description": "deploy six ingress services per host using committed experiment vars",
+      "command": "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) KOMBAT_BINARY_PATH=/tmp/kombat_chain-live-dd022982 .venv/bin/ansible-playbook playbooks/deploy.yml -e @../../experiments/live/252-six-ingress-topology.vars.yml"
+    },
+    {
+      "description": "verify six-port topology with same committed experiment vars",
+      "command": "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) KOMBAT_BINARY_PATH=/tmp/kombat_chain-live-dd022982 .venv/bin/ansible-playbook playbooks/verify.yml -e @../../experiments/live/252-six-ingress-topology.vars.yml"
+    },
+    {
+      "description": "wipe chain state and restart six-service topology",
+      "command": "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible kombat_live_testnet -m shell -a 'systemctl stop kombat-chain-ingress6 kombat-chain-ingress5 kombat-chain-ingress4 kombat-chain-ingress3 kombat-chain-ingress2 kombat-chain-ingress kombat-chain && rm -rf /var/lib/and-chain && mkdir -p /var/lib/and-chain/snapshots && chown -R and-chain:and-chain /var/lib/and-chain && systemctl start kombat-chain && systemctl start kombat-chain-ingress kombat-chain-ingress2 kombat-chain-ingress3 kombat-chain-ingress4 kombat-chain-ingress5 kombat-chain-ingress6'"
+    },
+    {
+      "description": "run item-219-equivalent endpoint count using only healthy ingress hosts",
+      "artifact": "/tmp/and-live-252-v2v3-six-ingress-100k-60s",
+      "command": "LOADTEST_VALIDATOR_NAMES='validator-2 validator-3' LOADTEST_ENDPOINT_PORTS='8645 8646 8647 8648 8649 8650' LOADTEST_OUTPUT_DIR=/tmp/and-live-252-v2v3-six-ingress-100k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=1 LOADTEST_FAIL_ON_ERRORS=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 100000 60"
+    }
+  ],
+  "success_criteria": {
+    "primary": "state roots match at common height, request errors remain zero, all Mahi pools drain after standard drain, and committed TPS meets or exceeds the item-219 green reference of 85,382 TPS",
+    "secondary": "validator-2 and validator-3 endpoints stay near the proven ~8.33k RPS target band across all six ports"
+  },
+  "result": {
+    "artifact": "/tmp/and-live-252-v2v3-six-ingress-100k-60s",
+    "ok_total": 5280776,
+    "committed_total_after_standard_drain": 1122661,
+    "committed_tps_after_standard_drain": 18711.0,
+    "measured_rps_total": 80511.2,
+    "nonce_err_total": 0,
+    "rpc_err_total": 0,
+    "net_err_total": 0,
+    "common_height_checked": 49,
+    "state_roots": {
+      "validator-1": "0x99d8c62f8d34278a14181d813e8f6a0424d236dff333488d0ed39d18f2fee41a",
+      "validator-2": "0x99d8c62f8d34278a14181d813e8f6a0424d236dff333488d0ed39d18f2fee41a",
+      "validator-3": "0x99d8c62f8d34278a14181d813e8f6a0424d236dff333488d0ed39d18f2fee41a",
+      "validator-4": "0x3c404369721ba50302277c34b2150f4946d3ac1839964579ffd830f15ecba1eb"
+    },
+    "block_hashes": {
+      "validator-1": "0xc0e30d0a87f622df6c37ad994df4eb621fbfb497d07368f2cf261876a3f514f5",
+      "validator-2": "0xc0e30d0a87f622df6c37ad994df4eb621fbfb497d07368f2cf261876a3f514f5",
+      "validator-3": "0xc0e30d0a87f622df6c37ad994df4eb621fbfb497d07368f2cf261876a3f514f5",
+      "validator-4": "0x885118124bb5030ef15117fecf548ae6172d01519448792301a651d5e8a97dac"
+    },
+    "mahi_pre_admitted_pool_items_after_standard_drain": {
+      "validator-1": 524288,
+      "validator-2": 523384,
+      "validator-3": 524288,
+      "validator-4": 524288
+    },
+    "rollback": {
+      "extra_ingress_services_disabled": true,
+      "default_three_ingress_topology_redeployed": true,
+      "chain_state_wiped_after_binned_run": true,
+      "default_verify_passed": true,
+      "extra_ingress_services_inactive_after_rollback": true
+    },
+    "decision": "Binned. The healthy-host six-ingress topology raised accepted load but caused large Mahi pre-admitted backlogs and state-root divergence at common height 49. The overload changes protocol behavior under drain pressure and is not a safe green recovery path."
+  }
+}

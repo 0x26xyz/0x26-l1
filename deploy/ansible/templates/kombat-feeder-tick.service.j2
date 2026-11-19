@@ -1,0 +1,9 @@
+[Unit]
+Description=Kombat testnet feeder bridge tick
+After=network-online.target {{ and_chain_validator_service_name | default('kombat-chain') }}.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart={{ and_chain_install_root }}/bin/kombat_feeder_tick.sh

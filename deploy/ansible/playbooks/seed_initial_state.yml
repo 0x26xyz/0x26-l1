@@ -1,0 +1,568 @@
+- name: Seed Kombat live testnet initial state
+  hosts: kombat_live_testnet
+  gather_facts: false
+  become: false
+  vars:
+    seed_target_host: "{{ and_chain_seed_initial_state_hosts | default(and_chain_reset_bootstrap_validator_host | default('validator-1')) }}"
+    validator_rpc_url: "http://127.0.0.1:{{ and_chain_validator_rpc_port }}"
+    seed_enabled: "{{ (and_chain_seed_initial_state_enabled | default(true) | bool) and (inventory_hostname == seed_target_host) }}"
+    seed_timestamp_ms: "{{ and_chain_seed_timestamp_ms | default(1200) | int }}"
+    mm_liquidity_collateral_accounts:
+      - account_id: "{{ and_chain_liquidity_bot_maker_account_id }}"
+        collateral: "{{ and_chain_liquidity_bot_maker_isolated_collateral | default(and_chain_liquidity_bot_collateral | default('1000000000000000')) }}"
+      - account_id: "{{ and_chain_liquidity_bot_taker_account_id | default(260002) }}"
+        collateral: "{{ and_chain_liquidity_bot_taker_isolated_collateral | default(and_chain_liquidity_bot_collateral | default('1000000000000000')) }}"
+    llm_trader_seed_accounts: "{{ and_chain_llm_trader_seed_accounts | default([]) }}"
+    real_capital_demo_enabled: "{{ and_chain_seed_real_capital_demo_enabled | default(false) | bool }}"
+    real_capital_demo_bootstrap_open_enabled: "{{ and_chain_seed_real_capital_demo_bootstrap_open_enabled | default(true) | bool }}"
+  pre_tasks:
+    - name: Require operator token for initial-state seeding
+      ansible.builtin.assert:
+        that:
+          - and_chain_operator_token | length > 0
+        fail_msg: "Set KOMBAT_OPERATOR_TOKEN in the environment before seeding initial state."
+      when: seed_enabled
+
+  tasks:
+    - name: Read seeded perpetual markets
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_getMarket
+          params:
+            market_id: "{{ item.market_id }}"
+          id: "get-market-{{ item.market_id }}"
+        return_content: true
+        status_code: 200
+      loop: "{{ and_chain_seed_perpetual_markets | default([]) }}"
+      register: seeded_market_reads
+      when: seed_enabled
+
+    - name: List missing seeded perpetual markets
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        headers:
+          authorization: "Bearer {{ and_chain_operator_token }}"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_listPerpetualMarket
+          params:
+            market_id: "{{ item.market_id }}"
+            base_symbol: "{{ item.base_symbol }}"
+            quote_asset: "{{ item.quote_asset }}"
+            oracle_feed_id: "{{ item.oracle_feed_id }}"
+            initial_margin_bps: "{{ item.initial_margin_bps }}"
+            maintenance_margin_bps: "{{ item.maintenance_margin_bps }}"
+            max_leverage: "{{ item.max_leverage }}"
+            lot_size_microunits: "{{ item.lot_size_microunits }}"
+            tick_size_bps: "{{ item.tick_size_bps }}"
+            funding_interval_ms: "{{ item.funding_interval_ms }}"
+            oracle_max_staleness_ms: "{{ item.oracle_max_staleness_ms }}"
+            breaker_price_band_bps: "{{ item.breaker_price_band_bps }}"
+            oracle_min_sources: "{{ item.oracle_min_sources }}"
+            oracle_min_confidence: "{{ item.oracle_min_confidence }}"
+            oracle_min_samples: "{{ item.oracle_min_samples }}"
+            oracle_feeder_ids_hex: "{{ item.oracle_feeder_ids_hex }}"
+            timestamp_ms: "{{ seed_timestamp_ms | int + market_index }}"
+          id: "list-market-{{ item.market_id }}"
+        return_content: true
+        status_code: 200
+      loop: "{{ and_chain_seed_perpetual_markets | default([]) }}"
+      loop_control:
+        index_var: market_index
+      register: seeded_market_writes
+      when:
+        - seed_enabled
+        - seeded_market_reads.results[market_index].json.result is none
+      failed_when:
+        - seeded_market_writes.status != 200
+          or (seeded_market_writes.json.error is defined and seeded_market_writes.json.error is not none)
+
+    - name: Verify seeded perpetual markets are readable
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_getMarket
+          params:
+            market_id: "{{ item.market_id }}"
+          id: "verify-market-{{ item.market_id }}"
+        return_content: true
+        status_code: 200
+      loop: "{{ and_chain_seed_perpetual_markets | default([]) }}"
+      register: seeded_market_verification
+      when: seed_enabled
+      failed_when:
+        - seeded_market_verification.status != 200
+          or seeded_market_verification.json.result is none
+          or seeded_market_verification.json.result.status != "active"
+
+    - name: Read RFC027 demo MM maker account
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_getAccount
+          params:
+            account_id: "{{ and_chain_liquidity_bot_maker_account_id }}"
+          id: "get-mm-maker-account"
+        return_content: true
+        status_code: 200
+      register: mm_maker_account_read
+      when:
+        - seed_enabled
+        - and_chain_seed_mm_liquidity_provider_enabled | default(true) | bool
+
+    - name: Create RFC027 demo MM maker account
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        headers:
+          authorization: "Bearer {{ and_chain_operator_token }}"
+          x-and-network-relay: "create-account"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_createAccount
+          params:
+            account_id: "{{ and_chain_liquidity_bot_maker_account_id }}"
+            owner_hex: "{{ and_chain_liquidity_bot_maker_owner_hex }}"
+            code_hash_hex: "{{ and_chain_liquidity_bot_maker_code_hash_hex }}"
+            evm_address_hex: "{{ and_chain_liquidity_bot_maker_evm_address_hex }}"
+            timestamp_ms: "{{ seed_timestamp_ms | int + 100 }}"
+          id: "create-mm-maker-account"
+        return_content: true
+        status_code: 200
+      register: mm_maker_account_create
+      throttle: 1
+      when:
+        - seed_enabled
+        - and_chain_seed_mm_liquidity_provider_enabled | default(true) | bool
+        - mm_maker_account_read.json.result | default(none) is none
+      failed_when:
+        - mm_maker_account_create.status != 200
+          or (
+            mm_maker_account_create.json.error is defined
+            and mm_maker_account_create.json.error is not none
+            and (mm_maker_account_create.json.error.data | default({})).reason | default('')
+              not in ['account_already_exists', 'duplicate_account']
+          )
+
+    - name: Read RFC027 demo MM taker account
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_getAccount
+          params:
+            account_id: "{{ and_chain_liquidity_bot_taker_account_id | default(260002) }}"
+          id: "get-mm-taker-account"
+        return_content: true
+        status_code: 200
+      register: mm_taker_account_read
+      when:
+        - seed_enabled
+        - and_chain_seed_mm_liquidity_provider_enabled | default(true) | bool
+
+    - name: Create RFC027 demo MM taker account
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        headers:
+          authorization: "Bearer {{ and_chain_operator_token }}"
+          x-and-network-relay: "create-account"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_createAccount
+          params:
+            account_id: "{{ and_chain_liquidity_bot_taker_account_id | default(260002) }}"
+            owner_hex: "{{ and_chain_liquidity_bot_taker_owner_hex }}"
+            code_hash_hex: "{{ and_chain_liquidity_bot_taker_code_hash_hex | default(and_chain_liquidity_bot_maker_code_hash_hex) }}"
+            evm_address_hex: "{{ and_chain_liquidity_bot_taker_evm_address_hex }}"
+            timestamp_ms: "{{ seed_timestamp_ms | int + 101 }}"
+          id: "create-mm-taker-account"
+        return_content: true
+        status_code: 200
+      register: mm_taker_account_create
+      throttle: 1
+      when:
+        - seed_enabled
+        - and_chain_seed_mm_liquidity_provider_enabled | default(true) | bool
+        - mm_taker_account_read.json.result | default(none) is none
+      failed_when:
+        - mm_taker_account_create.status != 200
+          or (
+            mm_taker_account_create.json.error is defined
+            and mm_taker_account_create.json.error is not none
+            and (mm_taker_account_create.json.error.data | default({})).reason | default('')
+              not in ['account_already_exists', 'duplicate_account']
+          )
+
+    - name: Seed RFC027 demo MM maker policy USDC bond balance
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        headers:
+          authorization: "Bearer {{ and_chain_operator_token }}"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_setPolicyUsdcBalance
+          params:
+            address_hex: "{{ and_chain_liquidity_bot_maker_evm_address_hex }}"
+            amount: "{{ and_chain_liquidity_bot_mm_policy_usdc }}"
+          id: "seed-mm-maker-policy-usdc"
+        return_content: true
+        status_code: 200
+      register: mm_maker_policy_usdc_seed
+      when:
+        - seed_enabled
+        - and_chain_seed_mm_liquidity_provider_enabled | default(true) | bool
+      failed_when:
+        - mm_maker_policy_usdc_seed.status != 200
+          or (mm_maker_policy_usdc_seed.json.error is defined and mm_maker_policy_usdc_seed.json.error is not none)
+
+    - name: Seed RFC027 demo MM taker policy USDC balance
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        headers:
+          authorization: "Bearer {{ and_chain_operator_token }}"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_setPolicyUsdcBalance
+          params:
+            address_hex: "{{ and_chain_liquidity_bot_taker_evm_address_hex }}"
+            amount: "{{ and_chain_liquidity_bot_taker_policy_usdc | default(and_chain_liquidity_bot_mm_policy_usdc) }}"
+          id: "seed-mm-taker-policy-usdc"
+        return_content: true
+        status_code: 200
+      register: mm_taker_policy_usdc_seed
+      when:
+        - seed_enabled
+        - and_chain_seed_mm_liquidity_provider_enabled | default(true) | bool
+      failed_when:
+        - mm_taker_policy_usdc_seed.status != 200
+          or (mm_taker_policy_usdc_seed.json.error is defined and mm_taker_policy_usdc_seed.json.error is not none)
+
+    - name: Seed RFC027 demo MM isolated collateral
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        headers:
+          authorization: "Bearer {{ and_chain_operator_token }}"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_setIsolatedCollateral
+          params:
+            market_id: "{{ item.0.market_id }}"
+            account_id: "{{ item.1.account_id }}"
+            collateral: "{{ item.1.collateral }}"
+            timestamp_ms: "{{ seed_timestamp_ms | int + 200 }}"
+          id: "seed-mm-collateral-{{ item.0.market_id }}-{{ item.1.account_id }}"
+        return_content: true
+        status_code: 200
+      loop: "{{ and_chain_seed_perpetual_markets | default([]) | product(mm_liquidity_collateral_accounts) | list }}"
+      register: mm_isolated_collateral_seed
+      when:
+        - seed_enabled
+        - and_chain_seed_mm_liquidity_provider_enabled | default(true) | bool
+      failed_when:
+        - mm_isolated_collateral_seed.status != 200
+          or (mm_isolated_collateral_seed.json.error is defined and mm_isolated_collateral_seed.json.error is not none)
+
+    - name: Seed LLM trader policy USDC balances
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        headers:
+          authorization: "Bearer {{ and_chain_operator_token }}"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_setPolicyUsdcBalance
+          params:
+            address_hex: "{{ item.evm_address_hex }}"
+            amount: "{{ item.policy_usdc_micro | default(and_chain_llm_trader_seed_policy_usdc_micro | default('10000000000000')) }}"
+          id: "seed-llm-policy-usdc-{{ item.account_id }}"
+        return_content: true
+        status_code: 200
+      loop: "{{ llm_trader_seed_accounts }}"
+      register: llm_policy_usdc_seed
+      when:
+        - seed_enabled
+        - and_chain_seed_llm_trader_accounts_enabled | default(false) | bool
+      failed_when:
+        - llm_policy_usdc_seed.status != 200
+          or (llm_policy_usdc_seed.json.error is defined and llm_policy_usdc_seed.json.error is not none)
+
+    - name: Seed LLM trader isolated collateral
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        headers:
+          authorization: "Bearer {{ and_chain_operator_token }}"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_setIsolatedCollateral
+          params:
+            market_id: "{{ item.market_id }}"
+            account_id: "{{ item.account_id }}"
+            collateral: "{{ item.isolated_collateral_micro | default(and_chain_llm_trader_seed_isolated_collateral_micro | default('1000000000000000')) }}"
+            timestamp_ms: "{{ seed_timestamp_ms | int + 300 + ansible_loop.index0 }}"
+          id: "seed-llm-collateral-{{ item.market_id }}-{{ item.account_id }}"
+        return_content: true
+        status_code: 200
+      loop: "{{ llm_trader_seed_accounts }}"
+      loop_control:
+        extended: true
+      register: llm_isolated_collateral_seed
+      when:
+        - seed_enabled
+        - and_chain_seed_llm_trader_accounts_enabled | default(false) | bool
+      failed_when:
+        - llm_isolated_collateral_seed.status != 200
+          or (llm_isolated_collateral_seed.json.error is defined and llm_isolated_collateral_seed.json.error is not none)
+
+    - name: Read RFC049 demo principal account
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_getAccount
+          params:
+            account_id: "{{ and_chain_real_capital_demo_principal_account_id }}"
+          id: "get-rfc049-demo-principal-account"
+        return_content: true
+        status_code: 200
+      register: real_capital_demo_principal_account_read
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+
+    - name: Create RFC049 demo principal account on bootstrap validator
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        headers:
+          authorization: "Bearer {{ and_chain_operator_token }}"
+          x-and-network-relay: "create-account"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_createAccount
+          params:
+            account_id: "{{ and_chain_real_capital_demo_principal_account_id }}"
+            owner_hex: "{{ and_chain_real_capital_demo_principal_owner_hex }}"
+            code_hash_hex: "{{ and_chain_real_capital_demo_principal_code_hash_hex }}"
+            evm_address_hex: "{{ and_chain_real_capital_demo_principal_evm_address_hex }}"
+            timestamp_ms: "{{ seed_timestamp_ms | int + 400 }}"
+          id: "create-rfc049-demo-principal-account"
+        return_content: true
+        status_code: 200
+      register: real_capital_demo_principal_account_create
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+        - real_capital_demo_principal_account_read.json.result | default(none) is none
+      failed_when:
+        - real_capital_demo_principal_account_create.status != 200
+          or (
+            real_capital_demo_principal_account_create.json.error is defined
+            and real_capital_demo_principal_account_create.json.error is not none
+            and (real_capital_demo_principal_account_create.json.error.data | default({})).reason | default('')
+              not in ['account_already_exists', 'duplicate_account']
+          )
+
+    - name: Seed RFC049 demo principal policy USDC balance
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        headers:
+          authorization: "Bearer {{ and_chain_operator_token }}"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_setPolicyUsdcBalance
+          params:
+            address_hex: "{{ and_chain_real_capital_demo_principal_evm_address_hex }}"
+            amount: "{{ and_chain_real_capital_demo_principal_policy_usdc_micro }}"
+          id: "seed-rfc049-demo-principal-policy-usdc"
+        return_content: true
+        status_code: 200
+      register: real_capital_demo_principal_policy_seed
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+      failed_when:
+        - real_capital_demo_principal_policy_seed.status != 200
+          or (real_capital_demo_principal_policy_seed.json.error is defined and real_capital_demo_principal_policy_seed.json.error is not none)
+
+    - name: Create RFC049 demo mandate on bootstrap validator
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        headers:
+          authorization: "Bearer {{ and_chain_operator_token }}"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_createMandate
+          params:
+            owner_hex: "{{ and_chain_real_capital_demo_mandate_owner_hex }}"
+            agent: "{{ and_chain_liquidity_bot_maker_account_id }}"
+            version: 1
+            constraints:
+              - kind: allowed_markets
+                set: "{{ and_chain_real_capital_demo_allowed_markets | default([7]) }}"
+              - kind: max_notional_per_market
+                market: 7
+                limit_usdc: "{{ and_chain_real_capital_demo_mandate_max_notional_per_market_micro_usdc }}"
+            objectives:
+              - kind: max_slippage_bps
+                limit: 50
+            objective_weights: [100]
+            conformance_window_ms: 86400000
+            session_keys_hex:
+              - "{{ and_chain_liquidity_bot_maker_session_pubkey_hex }}"
+            expires_at: "{{ (seed_timestamp_ms | int) + (and_chain_real_capital_demo_mandate_expires_after_ms | int) }}"
+            description_uri: "{{ and_chain_real_capital_demo_description_uri }}"
+            description_hash_hex: "{{ and_chain_real_capital_demo_description_hash_hex }}"
+            activation_tier: 0
+            timestamp_ms: "{{ seed_timestamp_ms | int + 401 }}"
+          id: "create-rfc049-demo-mandate"
+        return_content: true
+        status_code: 200
+      register: real_capital_demo_mandate_create
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+      failed_when:
+        - real_capital_demo_mandate_create.status != 200
+          or (real_capital_demo_mandate_create.json.error is defined and real_capital_demo_mandate_create.json.error is not none)
+
+    - name: Open RFC049 demo delegation on bootstrap validator
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        headers:
+          authorization: "Bearer {{ and_chain_operator_token }}"
+          x-and-network-relay: "delegation-action"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_openDelegation
+          params:
+            agent: "{{ and_chain_liquidity_bot_maker_account_id }}"
+            mandate_id_hex: "{{ real_capital_demo_mandate_create.json.result.mandate_id_hex }}"
+            performance_share_units: "{{ and_chain_real_capital_demo_performance_share_units }}"
+            crystallization_cadence_ms: "{{ and_chain_real_capital_demo_crystallization_cadence_ms }}"
+            notice_period_ms: "{{ and_chain_real_capital_demo_notice_period_ms }}"
+            agent_bond: "{{ and_chain_real_capital_demo_agent_bond_micro_usdc }}"
+            timestamp_ms: "{{ seed_timestamp_ms | int + 402 }}"
+          id: "open-rfc049-demo-delegation"
+        return_content: true
+        status_code: 200
+      register: real_capital_demo_delegation_open
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+        - real_capital_demo_bootstrap_open_enabled
+      failed_when:
+        - real_capital_demo_delegation_open.status != 200
+          or (real_capital_demo_delegation_open.json.error is defined and real_capital_demo_delegation_open.json.error is not none)
+
+    - name: Cache RFC049 demo delegation id
+      ansible.builtin.set_fact:
+        real_capital_demo_delegation_id_hex: "{{ real_capital_demo_delegation_open.json.result['delegation_id_hex'] }}"
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+        - real_capital_demo_bootstrap_open_enabled
+
+    - name: Read RFC049 demo vault record from unlisted vaults
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_listVaults
+          params:
+            operator: "{{ and_chain_liquidity_bot_maker_account_id }}"
+            include_unlisted: true
+            limit: 50
+          id: "list-rfc049-demo-vaults"
+        return_content: true
+        status_code: 200
+      register: real_capital_demo_vaults_unlisted
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+        - real_capital_demo_bootstrap_open_enabled
+      failed_when:
+        - real_capital_demo_vaults_unlisted.status != 200
+          or (real_capital_demo_vaults_unlisted.json.error is defined and real_capital_demo_vaults_unlisted.json.error is not none)
+
+    - name: Select RFC049 demo vault record
+      ansible.builtin.set_fact:
+        real_capital_demo_vault_record: >-
+          {% set ns = namespace(found={}) %}
+          {% for item in real_capital_demo_vaults_unlisted.json.result['items'] | default([]) %}
+          {% if item['details'] is defined
+                and item['details']['delegation'] is defined
+                and item['details']['delegation']['delegation_id_hex'] == real_capital_demo_delegation_id_hex %}
+          {% set ns.found = item %}
+          {% endif %}
+          {% endfor %}
+          {{ ns.found }}
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+        - real_capital_demo_bootstrap_open_enabled
+
+    - name: Cache RFC049 demo vault id
+      ansible.builtin.set_fact:
+        real_capital_demo_vault_id_hex: >-
+          {{
+            (
+              real_capital_demo_vaults_unlisted.json.result['items'] | default([])
+              | selectattr('details', 'defined')
+              | selectattr('details.delegation', 'defined')
+              | selectattr('details.delegation.delegation_id_hex', 'equalto', real_capital_demo_delegation_id_hex)
+              | map(attribute='vault_id_hex')
+              | list
+              | first
+            ) | default('')
+          }}
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+        - real_capital_demo_bootstrap_open_enabled
+
+    - name: Require RFC049 demo vault record before listing
+      ansible.builtin.assert:
+        that:
+          - real_capital_demo_vault_id_hex | length > 0
+        fail_msg: "RFC049 demo vault record missing after delegation open."
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+        - real_capital_demo_bootstrap_open_enabled

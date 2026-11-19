@@ -1,0 +1,15 @@
+[Unit]
+Description=Kombat testnet perps demo liquidity bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Restart=always
+RestartSec=5
+EnvironmentFile={{ liquidity_bot_env_file }}
+ExecStart={{ liquidity_bot_install_dir }}/kombat_mm_bot
+
+[Install]
+WantedBy=multi-user.target

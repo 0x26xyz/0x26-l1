@@ -1,0 +1,30 @@
+{
+  "id": 269,
+  "title": "Ansible loadgen pool hardening",
+  "date": "2026-04-27",
+  "status": "kept",
+  "code_commit_start": "7dee93a1042b01ac523e63854741e3854b4861f0",
+  "purpose": "Make the live benchmark loadgen runner pool explicit in checked-in Ansible inventory and exclude the undersized host that failed item 268.",
+  "files_changed": [
+    "chain/deploy/ansible/inventory/testnet.yml",
+    "chain/deploy/ansible/README.md",
+    "chain/experiments/live/269-ansible-loadgen-pool.json",
+    "chain/THROUGHPUT_DECISION_LOG.md"
+  ],
+  "included_loadgen_hosts": [
+    "root@203.0.113.10",
+    "root@203.0.113.12",
+    "root@203.0.113.11"
+  ],
+  "excluded_loadgen_hosts": [
+    {
+      "host": "root@203.0.113.18",
+      "reason": "2 vCPU / 4GB host dropped SSH mid-load in item 268 and is not suitable for green live benchmarks."
+    }
+  ],
+  "validation": [
+    "ansible-inventory -i chain/deploy/ansible/inventory/testnet.yml --list",
+    "confirmed root@203.0.113.18 is absent from checked-in Ansible inventory after the change"
+  ],
+  "next_move": "Run the live green ladder only with checked-in kombat_loadgen hosts or a replacement 8-vCPU+ runner added to this inventory. If a clean low-load run fails convergence, treat it as a node/protocol correctness bug rather than a loadgen-capacity issue."
+}

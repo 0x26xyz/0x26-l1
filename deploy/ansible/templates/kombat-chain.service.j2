@@ -1,0 +1,23 @@
+[Unit]
+Description=Kombat Chain validator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ and_chain_user }}
+Group={{ and_chain_group }}
+WorkingDirectory={{ and_chain_install_root }}
+EnvironmentFile={{ and_chain_config_dir }}/{{ validator_env_file }}
+ExecStart={{ and_chain_install_root }}/bin/kombat_chain
+Restart=always
+RestartSec=5
+LimitNOFILE=1048576
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths={{ and_chain_state_dir }}
+
+[Install]
+WantedBy=multi-user.target

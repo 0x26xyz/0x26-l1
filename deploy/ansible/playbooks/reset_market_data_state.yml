@@ -1,0 +1,42 @@
+- name: Reset Kombat live testnet market-data state
+  hosts: "{{ and_chain_market_data_hosts | default('kombat_market_data') }}"
+  remote_user: root
+  gather_facts: false
+  become: true
+  vars:
+    market_data_services:
+      - "{{ and_chain_market_data_service_name | default('kombat-market-data') }}"
+      - "{{ and_chain_questdb_service_name | default('kombat-questdb') }}"
+    questdb_container_name: "{{ and_chain_questdb_container_name | default('kombat-questdb') }}"
+    questdb_data_dir: "{{ and_chain_questdb_data_dir | default('/var/lib/and-chain/questdb') }}"
+
+  tasks:
+    - name: Stop market-data services
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: stopped
+      loop: "{{ market_data_services }}"
+      failed_when: false
+
+    - name: Remove QuestDB container if present
+      ansible.builtin.command:
+        argv:
+          - docker
+          - rm
+          - -f
+          - "{{ questdb_container_name }}"
+      changed_when: true
+      failed_when: false
+
+    - name: Reset QuestDB candle store
+      ansible.builtin.file:
+        path: "{{ questdb_data_dir }}"
+        state: absent
+
+    - name: Recreate QuestDB candle store directory
+      ansible.builtin.file:
+        path: "{{ questdb_data_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"

@@ -1,0 +1,68 @@
+- name: Audit market custody and isolated-collateral rows on stopped redb state
+  hosts: kombat_live_testnet
+  gather_facts: false
+  become: true
+  vars:
+    validator_service_name: "{{ and_chain_validator_service_name | default('kombat-chain') }}"
+    ingress_service_names: "{{ and_chain_ingress_services | map(attribute='name') | list }}"
+    chain_services: "{{ [validator_service_name] + ingress_service_names }}"
+    audit_stop_services: "{{ and_chain_audit_market_custody_stop_services | default(true) | bool }}"
+    audit_report_dir: "{{ and_chain_state_dir }}/migration-reports"
+    audit_report_path: "{{ audit_report_dir }}/market-custody-audit.json"
+    chain_binary: "{{ and_chain_install_root }}/bin/kombat_chain"
+    source_backend_path: "{{ and_chain_state_dir }}/state.redb"
+  tasks:
+    - name: Check source backend file exists before audit
+      ansible.builtin.stat:
+        path: "{{ source_backend_path }}"
+      register: source_backend_stat
+
+    - name: Require existing source backend for custody audit
+      ansible.builtin.assert:
+        that:
+          - source_backend_stat.stat.exists
+          - source_backend_stat.stat.isreg | default(false)
+        fail_msg: >-
+          Refusing market-custody audit because {{ source_backend_path }} is missing.
+
+    - name: Stop chain services before audit
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: stopped
+      loop: "{{ chain_services }}"
+      when: audit_stop_services
+
+    - name: Clear failed chain service state
+      ansible.builtin.command: "systemctl reset-failed {{ item }}"
+      changed_when: false
+      failed_when: false
+      loop: "{{ chain_services }}"
+
+    - name: Ensure audit report directory exists
+      ansible.builtin.file:
+        path: "{{ audit_report_dir }}"
+        state: directory
+        owner: "{{ and_chain_user }}"
+        group: "{{ and_chain_group }}"
+        mode: "0750"
+
+    - name: Audit market custody
+      ansible.builtin.command:
+        argv:
+          - "{{ chain_binary }}"
+          - audit-market-custody
+          - --data-dir
+          - "{{ and_chain_state_dir }}"
+          - --top-rows
+          - "20"
+          - --format
+          - json
+          - --report
+          - "{{ audit_report_path }}"
+      register: custody_audit
+      changed_when: false
+      failed_when: custody_audit.rc != 0
+
+    - name: Print custody audit
+      ansible.builtin.debug:
+        msg: "{{ custody_audit.stdout }}"

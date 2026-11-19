@@ -1,0 +1,42 @@
+- name: Configure local bridge mutation RPC gate
+  hosts: kombat_live_testnet
+  gather_facts: false
+  become: true
+  vars:
+    local_bridge_mutations_enabled: "{{ and_chain_local_bridge_mutations_enabled_override | default(false) | bool }}"
+    local_bridge_restart_mode: "{{ and_chain_local_bridge_restart_mode | default('all-chain-services') }}"
+    validator_service_name: "{{ and_chain_validator_service_name | default('kombat-chain') }}"
+    validator_env_file: "{{ and_chain_validator_env_file | default(validator_service_name ~ '.env') }}"
+    bootstrap_validator_host: "{{ and_chain_reset_bootstrap_validator_host | default('validator-1') }}"
+    ingress_service_names: "{{ and_chain_ingress_services | map(attribute='name') | list }}"
+    local_bridge_env_value: "{{ local_bridge_mutations_enabled | ternary('1', '0') }}"
+  tasks:
+    - name: Set validator local bridge mutation gate
+      ansible.builtin.lineinfile:
+        path: "{{ and_chain_config_dir }}/{{ validator_env_file }}"
+        regexp: "^KOMBAT_LOCAL_BRIDGE_MUTATIONS_ENABLED="
+        line: "KOMBAT_LOCAL_BRIDGE_MUTATIONS_ENABLED={{ local_bridge_env_value }}"
+        create: false
+
+    - name: Set ingress local bridge mutation gate
+      ansible.builtin.lineinfile:
+        path: "{{ and_chain_config_dir }}/{{ item }}.env"
+        regexp: "^KOMBAT_LOCAL_BRIDGE_MUTATIONS_ENABLED="
+        line: "KOMBAT_LOCAL_BRIDGE_MUTATIONS_ENABLED={{ local_bridge_env_value }}"
+        create: false
+      loop: "{{ ingress_service_names }}"
+
+    - name: Restart bootstrap validator after local bridge gate change
+      ansible.builtin.systemd_service:
+        name: "{{ validator_service_name }}"
+        state: restarted
+      when:
+        - local_bridge_restart_mode == 'bootstrap-validator'
+        - inventory_hostname == bootstrap_validator_host
+
+    - name: Restart all chain services after local bridge gate change
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: restarted
+      loop: "{{ [validator_service_name] + ingress_service_names }}"
+      when: local_bridge_restart_mode == 'all-chain-services'

@@ -1,0 +1,50 @@
+{
+  "id": 271,
+  "title": "Live loadgen reusable payload cache harness",
+  "date": "2026-04-27",
+  "status": "kept infrastructure",
+  "code_commit_start": "d8d826c426465e080fe8ef72383d087101e961ac",
+  "purpose": "Remove avoidable loadgen CPU and remote-copy churn from reset-before-each-run live benchmarks by supporting deterministic writer seeds, stable remote cache dirs, cached loadgen binaries/writer shards, and reusable prebuilt signed JSON-RPC payload bodies.",
+  "files_changed": [
+    "chain/crates/loadgen/Cargo.toml",
+    "chain/crates/loadgen/src/main.rs",
+    "chain/crates/loadgen/README.md",
+    "chain/scripts/prepare_live_loadtest_accounts.sh",
+    "chain/scripts/loadtest_live_network_from_validator.sh",
+    "chain/scripts/loadtest_live_network_multi_ingress.sh",
+    "chain/deploy/ansible/README.md",
+    "chain/experiments/live/271-loadgen-payload-cache-harness.json",
+    "chain/THROUGHPUT_DECISION_LOG.md"
+  ],
+  "new_flags": {
+    "prepare_live_loadtest_accounts.sh": [
+      "LOADTEST_WRITER_SEED_TAG"
+    ],
+    "kombat_loadgen": [
+      "--payload-cache-dir",
+      "--client-order-id-base"
+    ],
+    "live_loadtest_wrappers": [
+      "LOADTEST_REMOTE_CACHE_DIR",
+      "LOADTEST_PAYLOAD_CACHE",
+      "LOADTEST_PAYLOAD_CACHE_DIR",
+      "LOADTEST_INTENT_TTL_MS",
+      "LOADTEST_CLIENT_ORDER_ID_BASE"
+    ]
+  },
+  "validation": [
+    "bash -n chain/scripts/prepare_live_loadtest_accounts.sh",
+    "bash -n chain/scripts/loadtest_live_network_from_validator.sh",
+    "bash -n chain/scripts/loadtest_live_network_multi_ingress.sh",
+    "cargo test -p kombat-chain-loadgen --manifest-path chain/Cargo.toml",
+    "cargo build --release -p kombat-chain-loadgen --bin kombat_loadgen --manifest-path chain/Cargo.toml",
+    "chain/target/release/kombat_loadgen --help | rg -n \"payload-cache|client-order|intent-ttl|writers-json\""
+  ],
+  "notes": [
+    "Payload caching is intentionally opt-in and limited to non-strict batched place-order runs, matching the live green ladder shape.",
+    "Cached payloads are safe only after a chain reset plus deterministic reseed; reusing them twice inside the same chain state creates duplicate/stale nonces.",
+    "The wrapper defaults cached payload TTL to 315360000000 ms when LOADTEST_PAYLOAD_CACHE=1 so cached signed intents survive reuse across later reset/replay runs.",
+    "This is not a TPS result. The next live ladder must measure whether cached payloads lift delivered RPS or only reduce runner CPU variance."
+  ],
+  "example": "LOADTEST_WRITER_SEED_TAG=270 LOADTEST_REMOTE_CACHE_DIR=/var/tmp/kombat-loadgen-cache LOADTEST_PAYLOAD_CACHE=1 LOADTEST_EXTERNAL_RUNNER_HOSTS='root@203.0.113.10 root@203.0.113.12 root@203.0.113.11 root@203.0.113.13' bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 40000 60"
+}

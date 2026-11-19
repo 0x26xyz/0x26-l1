@@ -1,0 +1,130 @@
+{
+  "id": 256,
+  "name": "item251-known-good-replay",
+  "status": "kept_diagnostic_not_green",
+  "date": "2026-04-26",
+  "base_results": [
+    {
+      "decision_log_item": 251,
+      "committed_tps": 77666.8,
+      "artifact": "/tmp/and-live-251-v1-nginx-stopped-100k-60s",
+      "finding": "current clean live reference after stopping validator-1 nginx"
+    },
+    {
+      "decision_log_item": 255,
+      "committed_tps": 17821.6,
+      "artifact": "/tmp/and-live-255-rollback-backpressure-100k-60s",
+      "finding": "current-head rollback to pre-item253 runtime surfaces did not recover and diverged at common height 59"
+    }
+  ],
+  "hypothesis": "Replaying the exact item251 Linux binary and host isolation state should distinguish code regression from live environment/config drift. If item251 no longer reproduces, the regression is outside the current-head backpressure code path and must be investigated as environment/config drift or a later non-backpressure chain change.",
+  "files": [
+    "chain/experiments/live/256-item251-known-good-replay.json",
+    "chain/THROUGHPUT_DECISION_LOG.md"
+  ],
+  "environment_controls": {
+    "deployed_binary_path": "/tmp/kombat_chain-live-dd022982",
+    "deployed_binary_sha256": "dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd",
+    "binary_format": "ELF 64-bit x86-64 Linux",
+    "services_to_stop": [
+      "nginx"
+    ],
+    "chain_services": [
+      "kombat-chain",
+      "kombat-chain-ingress",
+      "kombat-chain-ingress2",
+      "kombat-chain-ingress3"
+    ],
+    "ingress_ports": [
+      8645,
+      8646,
+      8647
+    ]
+  },
+  "config_diff_check": {
+    "reference": "chain-exp-251-v1-nginx-isolation-result",
+    "command": "git diff chain-exp-251-v1-nginx-isolation-result -- chain/deploy/ansible/inventory/group_vars/kombat_live_testnet.yml chain/deploy/ansible/templates/kombat-chain.env.j2 chain/deploy/ansible/templates/kombat-ingress.env.j2 chain/deploy/ansible/playbooks/verify.yml",
+    "result": "no diff"
+  },
+  "planned_commands": [
+    {
+      "description": "verify item251 binary is still the expected Linux ELF",
+      "command": "file /tmp/kombat_chain-live-dd022982 && shasum -a 256 /tmp/kombat_chain-live-dd022982"
+    },
+    {
+      "description": "stop non-chain nginx through Ansible and print before/after service state",
+      "command": "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) KOMBAT_NON_CHAIN_SERVICES_TO_STOP=nginx .venv/bin/ansible-playbook playbooks/stop_non_chain_services.yml"
+    },
+    {
+      "description": "deploy the exact item251 binary with the default three-ingress topology",
+      "command": "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) KOMBAT_BINARY_PATH=/tmp/kombat_chain-live-dd022982 .venv/bin/ansible-playbook playbooks/deploy.yml"
+    },
+    {
+      "description": "verify the deployed binary and live service config",
+      "command": "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) KOMBAT_BINARY_PATH=/tmp/kombat_chain-live-dd022982 .venv/bin/ansible-playbook playbooks/verify.yml"
+    },
+    {
+      "description": "wipe chain state and restart the default live topology",
+      "command": "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible kombat_live_testnet -m shell -a \"bash -lc 'set -euo pipefail; systemctl stop kombat-chain-ingress3 kombat-chain-ingress2 kombat-chain-ingress kombat-chain; rm -rf /var/lib/and-chain; mkdir -p /var/lib/and-chain/snapshots; chown -R and-chain:and-chain /var/lib/and-chain; systemctl start kombat-chain; systemctl start kombat-chain-ingress kombat-chain-ingress2 kombat-chain-ingress3'\""
+    },
+    {
+      "description": "replay item251 12-endpoint topology",
+      "artifact": "/tmp/and-live-256-item251-known-good-replay-100k-60s",
+      "command": "LOADTEST_OUTPUT_DIR=/tmp/and-live-256-item251-known-good-replay-100k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=1 LOADTEST_FAIL_ON_ERRORS=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 100000 60"
+    }
+  ],
+  "success_criteria": {
+    "request_errors": 0,
+    "state_roots_match_at_common_height": true,
+    "pools_drained": true,
+    "committed_tps_floor": 76000,
+    "expected_reference": "item251 77,666.8 TPS"
+  },
+  "result": {
+    "artifact": "/tmp/and-live-256-item251-known-good-replay-100k-60s",
+    "duration_secs": 60,
+    "endpoint_count": 12,
+    "ok_total": 3965000,
+    "rpc_err_total": 0,
+    "nonce_err_total": 0,
+    "net_err_total": 0,
+    "measured_rps_total": 61105.9,
+    "committed_total": 1522837,
+    "committed_tps": 25380.6,
+    "endpoint_measured_rps": {
+      "validator-1": [
+        2582.3,
+        2489.6,
+        2661.2
+      ],
+      "validator-2": [
+        8340.4,
+        8354.5,
+        8336.8
+      ],
+      "validator-3": [
+        8333.7,
+        8330.5,
+        8332.3
+      ],
+      "validator-4": [
+        1080.5,
+        1130.1,
+        1134.0
+      ]
+    },
+    "post_run_pool_items": {
+      "validator-1": 112536,
+      "validator-2": 163848,
+      "validator-3": 158704,
+      "validator-4": 124008
+    },
+    "common_height_check": {
+      "height": 85,
+      "block_hash_hex": "0x0c363ca56409b8b16f16fff74cbfcb5e29edc69ad6c5f7ada7c69ba22b4d5656",
+      "state_root_hex": "0xaaad8b247770029b22d484d95b68a2697727e852edc972e67dc788f48d294c0b",
+      "matched": true
+    },
+    "decision": "Kept diagnostic, not green. The exact item251 binary plus unchanged Ansible config no longer reproduces item251 throughput. Correctness passed, but TPS collapsed and pools did not drain, so the live regression is environment/runtime/topology state rather than current-head code alone."
+  }
+}

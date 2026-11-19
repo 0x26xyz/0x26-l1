@@ -1,0 +1,17 @@
+# Testnet-only LLM trader settings for external runner hosts.
+#
+# The LLM trader runs on kombat_loadgen hosts, not validator hosts, so vars that
+# affect its rendered systemd environment must live in this group.
+and_chain_llm_trader_enabled: false
+and_chain_llm_trader_testnet_taker_cadence_enabled: true
+# Live resettable-testnet takers should produce visible fills. 100k BTC lots is
+# 0.1 BTC; keep the policy cap high enough that BTC cadence can run through a
+# full day without immediately tripping the safety guard.
+and_chain_llm_trader_max_volume_per_day_usdc: 50000000
+and_chain_llm_trader_max_trade_lots: 100000
+and_chain_llm_trader_max_position_lots: 100000
+and_chain_llm_trader_testnet_taker_size_lots: 100000
+and_chain_llm_trader_testnet_taker_every_n_holds: 1
+# Keep nonce-sensitive bot reads and writes pinned to one active validator RPC.
+# validator-1 is ingress-only in this topology and cannot create local accounts.
+and_chain_llm_trader_rpc_url: "http://203.0.113.17:8545"

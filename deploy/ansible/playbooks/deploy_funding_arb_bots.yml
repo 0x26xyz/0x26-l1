@@ -1,0 +1,135 @@
+- name: Deploy Kombat testnet funding-arb bot fleet
+  hosts: "{{ and_chain_funding_arb_hosts | default('loadgen-1') }}"
+  remote_user: root
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../inventory/group_vars/kombat_live_testnet.yml
+    - ../inventory/group_vars/kombat_loadgen.yml
+  vars:
+    funding_arb_install_dir: "{{ and_chain_funding_arb_install_dir | default('/opt/and-chain/bin') }}"
+    funding_arb_config_dir: "{{ and_chain_funding_arb_config_dir | default('/etc/and-chain') }}"
+    funding_arb_binary_path: "{{ lookup('env', 'KOMBAT_FUNDING_ARB_BINARY_PATH') | default(playbook_dir + '/../../../target-linux-x86_64/release/kombat_funding_arb_bot', true) }}"
+    funding_arb_rpc_url: "{{ and_chain_funding_arb_rpc_url | default(and_chain_liquidity_bot_rpc_url | default('https://testnet.0x26.xyz/api')) }}"
+    funding_arb_chain_id: "{{ and_chain_chain_id | default(7) }}"
+    funding_arb_market_ids: "{{ and_chain_funding_arb_market_ids | default('7,8,9,10,11') }}"
+    funding_arb_account_id: "{{ and_chain_funding_arb_account_id | default(and_chain_liquidity_bot_taker_account_id | default(260002)) }}"
+    funding_arb_owner_secret_hex: "{{ and_chain_funding_arb_owner_secret_hex | default(and_chain_liquidity_bot_taker_owner_secret_hex) }}"
+    funding_arb_session_secret_hex: "{{ and_chain_funding_arb_session_secret_hex | default(and_chain_liquidity_bot_taker_session_secret_hex) }}"
+    funding_arb_operator_token: "{{ lookup('env', 'KOMBAT_OPERATOR_TOKEN') }}"
+    funding_arb_bots: "{{ and_chain_funding_arb_bots | default([]) }}"
+
+  pre_tasks:
+    - name: Require operator token for funding-arb deploy
+      ansible.builtin.assert:
+        that:
+          - funding_arb_operator_token | length > 0
+        fail_msg: "Set KOMBAT_OPERATOR_TOKEN in the environment before deploying the funding-arb bot fleet."
+
+    - name: Require signed-intent credentials for funding-arb fleet
+      ansible.builtin.assert:
+        that:
+          - funding_arb_owner_secret_hex | length == 64
+          - funding_arb_session_secret_hex | length == 64
+        fail_msg: "Set 32-byte funding-arb owner and session secret hex values before deploying the bots."
+
+    - name: Require at least one funding-arb bot definition
+      ansible.builtin.assert:
+        that:
+          - funding_arb_bots | length > 0
+        fail_msg: "Define and_chain_funding_arb_bots in inventory before deploying the funding-arb fleet."
+
+    - name: Check local kombat_funding_arb_bot binary
+      ansible.builtin.stat:
+        path: "{{ funding_arb_binary_path }}"
+      delegate_to: localhost
+      become: false
+      register: local_funding_arb_binary
+      run_once: true
+
+    - name: Require local kombat_funding_arb_bot binary
+      ansible.builtin.assert:
+        that:
+          - local_funding_arb_binary.stat.exists
+          - local_funding_arb_binary.stat.executable
+        fail_msg: "Build the Linux kombat_funding_arb_bot binary and set KOMBAT_FUNDING_ARB_BINARY_PATH."
+      run_once: true
+
+  tasks:
+    - name: Ensure funding-arb install and config directories exist
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "{{ item.mode }}"
+      loop:
+        - path: "{{ funding_arb_install_dir }}"
+          mode: "0755"
+        - path: "{{ funding_arb_config_dir }}"
+          mode: "0755"
+
+    - name: Install funding-arb bot binary
+      ansible.builtin.copy:
+        src: "{{ funding_arb_binary_path }}"
+        dest: "{{ funding_arb_install_dir }}/kombat_funding_arb_bot"
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Render funding-arb bot environment files
+      ansible.builtin.copy:
+        dest: "{{ funding_arb_config_dir }}/funding-arb-{{ item.id }}.env"
+        owner: root
+        group: root
+        mode: "0600"
+        content: |
+          KOMBAT_FUNDING_ARB_RPC_URL={{ funding_arb_rpc_url }}
+          KOMBAT_FUNDING_ARB_CHAIN_ID={{ funding_arb_chain_id }}
+          KOMBAT_FUNDING_ARB_MARKET_IDS={{ funding_arb_market_ids }}
+          KOMBAT_FUNDING_ARB_ACCOUNT_ID={{ funding_arb_account_id }}
+          KOMBAT_FUNDING_ARB_OWNER_SECRET_HEX={{ funding_arb_owner_secret_hex }}
+          KOMBAT_FUNDING_ARB_SESSION_SECRET_HEX={{ funding_arb_session_secret_hex }}
+          KOMBAT_FUNDING_ARB_POLICY_ID={{ item.policy_id }}
+          KOMBAT_FUNDING_ARB_THRESHOLD_BPS={{ item.threshold_bps }}
+          KOMBAT_FUNDING_ARB_SIZE_LOTS={{ item.size_lots }}
+          KOMBAT_FUNDING_ARB_MAX_SLIPPAGE_BPS={{ item.max_slippage_bps | default(50) }}
+          KOMBAT_FUNDING_ARB_POLL_INTERVAL_MS={{ item.poll_interval_ms | default(5000) }}
+          KOMBAT_FUNDING_ARB_NOISE_SIZE_LOTS={{ item.noise_size_lots | default(0) }}
+          KOMBAT_FUNDING_ARB_NOISE_PROBABILITY_PCT={{ item.noise_probability_pct | default(25) }}
+          KOMBAT_FUNDING_ARB_INTENT_TTL_MS={{ item.intent_ttl_ms | default(60000) }}
+          KOMBAT_FUNDING_ARB_INTENT_STATUS_TIMEOUT_MS={{ item.intent_status_timeout_ms | default(15000) }}
+          KOMBAT_FUNDING_ARB_INTENT_STATUS_POLL_MS={{ item.intent_status_poll_ms | default(250) }}
+          KOMBAT_FUNDING_ARB_ENSURE_POLICY={{ item.ensure_policy | default(true) | bool | lower }}
+          KOMBAT_FUNDING_ARB_POLICY_EXPIRES_AT={{ item.policy_expires_at | default(4102444800000) }}
+          KOMBAT_FUNDING_ARB_POLICY_MAX_INTENTS_PER_SECOND={{ item.policy_max_intents_per_second | default(5) }}
+          KOMBAT_FUNDING_ARB_POLICY_MAX_INTENTS_PER_DAY={{ item.policy_max_intents_per_day | default(100000) }}
+          KOMBAT_FUNDING_ARB_POLICY_MAX_VOLUME_PER_DAY_MICRO_USDC={{ item.policy_max_volume_per_day_micro_usdc | default('1000000000000000') }}
+          KOMBAT_FUNDING_ARB_BOT_LABEL=funding-arb-{{ item.id }}
+          KOMBAT_OPERATOR_TOKEN={{ funding_arb_operator_token | to_json }}
+      loop: "{{ funding_arb_bots }}"
+      loop_control:
+        label: "{{ item.id }}"
+
+    - name: Render funding-arb bot systemd units
+      ansible.builtin.template:
+        src: ../templates/kombat-funding-arb-bot.service.j2
+        dest: "/etc/systemd/system/kombat-funding-arb-{{ item.id }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      vars:
+        bot: "{{ item }}"
+      loop: "{{ funding_arb_bots }}"
+      loop_control:
+        label: "{{ item.id }}"
+
+    - name: Enable funding-arb bot services
+      ansible.builtin.systemd_service:
+        name: "kombat-funding-arb-{{ item.id }}.service"
+        daemon_reload: true
+        enabled: true
+        state: restarted
+      loop: "{{ funding_arb_bots }}"
+      loop_control:
+        label: "{{ item.id }}"

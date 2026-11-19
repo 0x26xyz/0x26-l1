@@ -1,0 +1,652 @@
+- name: Finalize RFC049 demo vault on live cluster
+  hosts: kombat_live_testnet
+  gather_facts: false
+  become: false
+  vars:
+    real_capital_demo_target_host: "{{ and_chain_seed_real_capital_demo_hosts | default(and_chain_reset_bootstrap_validator_host | default('validator-1')) }}"
+    validator_rpc_url: "http://127.0.0.1:{{ and_chain_validator_rpc_port }}"
+    seed_enabled: "{{ (and_chain_seed_initial_state_enabled | default(true) | bool) and (inventory_hostname == real_capital_demo_target_host) }}"
+    active_validator_seed_enabled: "{{ (and_chain_seed_initial_state_enabled | default(true) | bool) and (validator_enabled | default(true) | bool) }}"
+    real_capital_demo_enabled: "{{ and_chain_seed_real_capital_demo_enabled | default(false) | bool }}"
+    real_capital_demo_listing_mode: "capped_pilot"
+  pre_tasks:
+    - name: Require operator token for RFC049 demo finalization
+      ansible.builtin.assert:
+        that:
+          - and_chain_operator_token | length > 0
+        fail_msg: "Set KOMBAT_OPERATOR_TOKEN in the environment before finalizing the RFC049 demo vault."
+      when:
+        - active_validator_seed_enabled
+        - real_capital_demo_enabled
+
+    - name: Read validator head for RFC049 demo listing timestamp
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_chainInfo
+          params: {}
+          id: "get-rfc049-demo-validator-chain-info-for-listing"
+        return_content: true
+        status_code: 200
+      register: real_capital_demo_listing_chain_info
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+      failed_when:
+        - real_capital_demo_listing_chain_info.status != 200
+          or (real_capital_demo_listing_chain_info.json.error is defined and real_capital_demo_listing_chain_info.json.error is not none)
+
+    - name: Cache RFC049 demo listing timestamp from validator head
+      ansible.builtin.set_fact:
+        post_cluster_listing_timestamp_ms: "{{ (real_capital_demo_listing_chain_info.json.result.head_timestamp_ms | int) + 1 }}"
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+
+  tasks:
+    - name: Read RFC049 demo mandate on active validators
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_listMandates
+          params:
+            agent: "{{ and_chain_liquidity_bot_maker_account_id }}"
+            state: active
+            limit: 50
+          id: "list-rfc049-demo-mandates-active-validator"
+        return_content: true
+        status_code: 200
+      register: real_capital_demo_active_mandates
+      when:
+        - active_validator_seed_enabled
+        - real_capital_demo_enabled
+      failed_when:
+        - real_capital_demo_active_mandates.status != 200
+          or (real_capital_demo_active_mandates.json.error is defined and real_capital_demo_active_mandates.json.error is not none)
+
+    - name: Cache RFC049 demo mandate id on active validator
+      ansible.builtin.set_fact:
+        real_capital_demo_active_mandate_id_hex: >-
+          {{
+            (
+              real_capital_demo_active_mandates.json.result | default([])
+              | selectattr('agent', 'equalto', and_chain_liquidity_bot_maker_account_id)
+              | selectattr('state', 'equalto', 'active')
+              | selectattr('description_uri', 'equalto', and_chain_real_capital_demo_description_uri)
+              | map(attribute='mandate_id_hex')
+              | list
+              | first
+            ) | default('')
+          }}
+      when:
+        - active_validator_seed_enabled
+        - real_capital_demo_enabled
+
+    - name: Create RFC049 demo mandate on active validator when absent
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        headers:
+          authorization: "Bearer {{ and_chain_operator_token }}"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_createMandate
+          params:
+            owner_hex: "{{ and_chain_real_capital_demo_mandate_owner_hex }}"
+            agent: "{{ and_chain_liquidity_bot_maker_account_id }}"
+            version: 1
+            constraints:
+              - kind: allowed_markets
+                set: "{{ and_chain_real_capital_demo_allowed_markets | default([7]) }}"
+              - kind: max_notional_per_market
+                market: 7
+                limit_usdc: "{{ and_chain_real_capital_demo_mandate_max_notional_per_market_micro_usdc }}"
+            objectives:
+              - kind: max_slippage_bps
+                limit: 50
+            objective_weights: [100]
+            conformance_window_ms: 86400000
+            session_keys_hex:
+              - "{{ and_chain_liquidity_bot_maker_session_pubkey_hex }}"
+            expires_at: "{{ (and_chain_seed_timestamp_ms | int) + (and_chain_real_capital_demo_mandate_expires_after_ms | int) }}"
+            description_uri: "{{ and_chain_real_capital_demo_description_uri }}"
+            description_hash_hex: "{{ and_chain_real_capital_demo_description_hash_hex }}"
+            activation_tier: 0
+            timestamp_ms: "{{ hostvars[real_capital_demo_target_host].post_cluster_listing_timestamp_ms }}"
+          id: "create-rfc049-demo-mandate-active-validator"
+        return_content: true
+        status_code: 200
+      register: real_capital_demo_active_mandate_create
+      when:
+        - active_validator_seed_enabled
+        - real_capital_demo_enabled
+        - real_capital_demo_active_mandate_id_hex | length == 0
+      failed_when:
+        - real_capital_demo_active_mandate_create.status != 200
+          or (real_capital_demo_active_mandate_create.json.error is defined and real_capital_demo_active_mandate_create.json.error is not none)
+
+    - name: Read RFC049 demo vaults after cluster start
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_listVaults
+          params:
+            operator: "{{ and_chain_liquidity_bot_maker_account_id }}"
+            include_unlisted: true
+            limit: 50
+          id: "list-rfc049-demo-vaults-post-cluster"
+        return_content: true
+        status_code: 200
+      register: real_capital_demo_vaults_post_cluster
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+      failed_when:
+        - real_capital_demo_vaults_post_cluster.status != 200
+          or (real_capital_demo_vaults_post_cluster.json.error is defined and real_capital_demo_vaults_post_cluster.json.error is not none)
+
+    - name: Read RFC049 demo mandate after cluster start
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_listMandates
+          params:
+            agent: "{{ and_chain_liquidity_bot_maker_account_id }}"
+            state: active
+            limit: 50
+          id: "list-rfc049-demo-mandates-post-cluster"
+        return_content: true
+        status_code: 200
+      register: real_capital_demo_mandates_post_cluster
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+      failed_when:
+        - real_capital_demo_mandates_post_cluster.status != 200
+          or (real_capital_demo_mandates_post_cluster.json.error is defined and real_capital_demo_mandates_post_cluster.json.error is not none)
+
+    - name: Cache RFC049 demo mandate id after cluster start
+      ansible.builtin.set_fact:
+        real_capital_demo_mandate_id_hex: >-
+          {{
+            (
+              real_capital_demo_mandates_post_cluster.json.result | default([])
+              | selectattr('agent', 'equalto', and_chain_liquidity_bot_maker_account_id)
+              | selectattr('state', 'equalto', 'active')
+              | selectattr('description_uri', 'equalto', and_chain_real_capital_demo_description_uri)
+              | map(attribute='mandate_id_hex')
+              | list
+              | first
+            ) | default('')
+          }}
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+
+    - name: Require RFC049 demo mandate before opening delegation
+      ansible.builtin.assert:
+        that:
+          - real_capital_demo_mandate_id_hex | length > 0
+        fail_msg: "RFC049 demo mandate missing after cluster start."
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+
+    - name: Cache RFC049 demo delegation id after cluster start
+      ansible.builtin.set_fact:
+        real_capital_demo_delegation_id_hex: >-
+          {{
+            (
+              real_capital_demo_vaults_post_cluster.json.result['items'] | default([])
+              | selectattr('details', 'defined')
+              | selectattr('details.delegation', 'defined')
+              | selectattr('details.delegation.agent', 'equalto', and_chain_liquidity_bot_maker_account_id)
+              | selectattr('details.delegation.performance_share_units', 'equalto', and_chain_real_capital_demo_performance_share_units)
+              | selectattr('details.delegation.notice_period_ms', 'equalto', and_chain_real_capital_demo_notice_period_ms)
+              | selectattr('details.delegation.agent_bond', 'equalto', and_chain_real_capital_demo_agent_bond_micro_usdc)
+              | map(attribute='details.delegation.delegation_id_hex')
+              | list
+              | first
+            ) | default('')
+          }}
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+
+    - name: Cache RFC049 demo vault id after cluster start
+      ansible.builtin.set_fact:
+        real_capital_demo_vault_id_hex: >-
+          {{
+            (
+              real_capital_demo_vaults_post_cluster.json.result['items'] | default([])
+              | selectattr('details', 'defined')
+              | selectattr('details.delegation', 'defined')
+              | selectattr('details.delegation.agent', 'equalto', and_chain_liquidity_bot_maker_account_id)
+              | selectattr('details.delegation.performance_share_units', 'equalto', and_chain_real_capital_demo_performance_share_units)
+              | selectattr('details.delegation.notice_period_ms', 'equalto', and_chain_real_capital_demo_notice_period_ms)
+              | selectattr('details.delegation.agent_bond', 'equalto', and_chain_real_capital_demo_agent_bond_micro_usdc)
+              | map(attribute='vault_id_hex')
+              | list
+              | first
+            ) | default('')
+          }}
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+
+    - name: Open RFC049 demo delegation after cluster start
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        headers:
+          authorization: "Bearer {{ and_chain_operator_token }}"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_openDelegation
+          params:
+            agent: "{{ and_chain_liquidity_bot_maker_account_id }}"
+            mandate_id_hex: "{{ real_capital_demo_mandate_id_hex }}"
+            performance_share_units: "{{ and_chain_real_capital_demo_performance_share_units }}"
+            crystallization_cadence_ms: "{{ and_chain_real_capital_demo_crystallization_cadence_ms }}"
+            notice_period_ms: "{{ and_chain_real_capital_demo_notice_period_ms }}"
+            agent_bond: "{{ and_chain_real_capital_demo_agent_bond_micro_usdc }}"
+            timestamp_ms: "{{ post_cluster_listing_timestamp_ms }}"
+          id: "open-rfc049-demo-delegation-post-cluster"
+        return_content: true
+        status_code: 200
+      register: real_capital_demo_delegation_open_post_cluster
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+        - real_capital_demo_delegation_id_hex | length == 0
+      failed_when:
+        - real_capital_demo_delegation_open_post_cluster.status != 200
+          or (real_capital_demo_delegation_open_post_cluster.json.error is defined and real_capital_demo_delegation_open_post_cluster.json.error is not none)
+
+    - name: Refresh RFC049 demo vaults after live delegation open
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_listVaults
+          params:
+            operator: "{{ and_chain_liquidity_bot_maker_account_id }}"
+            include_unlisted: true
+            limit: 50
+          id: "list-rfc049-demo-vaults-post-open"
+        return_content: true
+        status_code: 200
+      register: real_capital_demo_vaults_post_cluster
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+        - real_capital_demo_delegation_open_post_cluster is defined
+        - real_capital_demo_delegation_open_post_cluster.json is defined
+      failed_when:
+        - real_capital_demo_vaults_post_cluster.status != 200
+          or (real_capital_demo_vaults_post_cluster.json.error is defined and real_capital_demo_vaults_post_cluster.json.error is not none)
+
+    - name: Cache RFC049 demo delegation id after live open
+      ansible.builtin.set_fact:
+        real_capital_demo_delegation_id_hex: >-
+          {{
+            (
+              real_capital_demo_vaults_post_cluster.json.result['items'] | default([])
+              | selectattr('details', 'defined')
+              | selectattr('details.delegation', 'defined')
+              | selectattr('details.delegation.agent', 'equalto', and_chain_liquidity_bot_maker_account_id)
+              | selectattr('details.delegation.performance_share_units', 'equalto', and_chain_real_capital_demo_performance_share_units)
+              | selectattr('details.delegation.notice_period_ms', 'equalto', and_chain_real_capital_demo_notice_period_ms)
+              | selectattr('details.delegation.agent_bond', 'equalto', and_chain_real_capital_demo_agent_bond_micro_usdc)
+              | map(attribute='details.delegation.delegation_id_hex')
+              | list
+              | first
+            ) | default('')
+          }}
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+        - real_capital_demo_delegation_open_post_cluster is defined
+        - real_capital_demo_delegation_open_post_cluster.json is defined
+
+    - name: Cache RFC049 demo vault id after live open
+      ansible.builtin.set_fact:
+        real_capital_demo_vault_id_hex: >-
+          {{
+            (
+              real_capital_demo_vaults_post_cluster.json.result['items'] | default([])
+              | selectattr('details', 'defined')
+              | selectattr('details.delegation', 'defined')
+              | selectattr('details.delegation.agent', 'equalto', and_chain_liquidity_bot_maker_account_id)
+              | selectattr('details.delegation.performance_share_units', 'equalto', and_chain_real_capital_demo_performance_share_units)
+              | selectattr('details.delegation.notice_period_ms', 'equalto', and_chain_real_capital_demo_notice_period_ms)
+              | selectattr('details.delegation.agent_bond', 'equalto', and_chain_real_capital_demo_agent_bond_micro_usdc)
+              | map(attribute='vault_id_hex')
+              | list
+              | first
+            ) | default('')
+          }}
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+        - real_capital_demo_delegation_open_post_cluster is defined
+        - real_capital_demo_delegation_open_post_cluster.json is defined
+
+    - name: Require RFC049 demo vault identity after cluster start
+      ansible.builtin.assert:
+        that:
+          - real_capital_demo_delegation_id_hex | length > 0
+          - real_capital_demo_vault_id_hex | length > 0
+        fail_msg: "RFC049 demo vault identity missing after cluster start."
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+
+    - name: Read RFC049 demo listing before convergence on live cluster
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_getRealCapitalListing
+          params:
+            vault_id_hex: "{{ real_capital_demo_vault_id_hex }}"
+          id: "get-rfc049-demo-listing-pre-submit"
+        return_content: true
+        status_code: 200
+      register: real_capital_demo_listing_before_submit
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+      failed_when:
+        - real_capital_demo_listing_before_submit.status != 200
+          or (real_capital_demo_listing_before_submit.json.error is defined and real_capital_demo_listing_before_submit.json.error is not none)
+
+    - name: Decide whether RFC049 demo listing needs convergence on live cluster
+      ansible.builtin.set_fact:
+        real_capital_demo_listing_needs_upsert: >-
+          {{
+            not (
+              (real_capital_demo_listing_before_submit.json.result.present | default(false))
+              and ((real_capital_demo_listing_before_submit.json.result.listing.mode | default('')) == real_capital_demo_listing_mode)
+              and (real_capital_demo_listing_before_submit.json.result.listing.tier0_pilot_exception | default(false))
+              and (real_capital_demo_listing_before_submit.json.result.listing.deposit_enabled | default(false))
+              and (real_capital_demo_listing_before_submit.json.result.listing.listed_for_discovery | default(false))
+              and ((real_capital_demo_listing_before_submit.json.result.listing.per_principal_cap_micro_usdc | default(0) | int) == (and_chain_real_capital_demo_per_principal_cap_micro_usdc | int))
+              and ((real_capital_demo_listing_before_submit.json.result.listing.total_vault_tvl_cap_micro_usdc | default(0) | int) == (and_chain_real_capital_demo_total_tvl_cap_micro_usdc | int))
+            )
+          }}
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+
+    - name: Submit RFC049 demo pilot listing on live cluster
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        headers:
+          authorization: "Bearer {{ and_chain_operator_token }}"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_submitRealCapitalGovernanceAction
+          params:
+            action:
+              kind: upsert_listing
+              vault_id_hex: "{{ real_capital_demo_vault_id_hex }}"
+              delegation_id_hex: "{{ real_capital_demo_delegation_id_hex }}"
+              serving_agent: "{{ and_chain_liquidity_bot_maker_account_id }}"
+              mode: "{{ real_capital_demo_listing_mode }}"
+              tier0_pilot_exception: true
+              deposit_enabled: true
+              listed_for_discovery: true
+              per_principal_micro_usdc: "{{ and_chain_real_capital_demo_per_principal_cap_micro_usdc }}"
+              total_vault_tvl_micro_usdc: "{{ and_chain_real_capital_demo_total_tvl_cap_micro_usdc }}"
+            timestamp_ms: "{{ post_cluster_listing_timestamp_ms }}"
+          id: "submit-rfc049-demo-listing-post-cluster"
+        return_content: true
+        status_code: 200
+      register: real_capital_demo_listing_submit
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+        - real_capital_demo_listing_needs_upsert | default(false)
+      failed_when:
+        - real_capital_demo_listing_submit.status != 200
+          or (real_capital_demo_listing_submit.json.error is defined and real_capital_demo_listing_submit.json.error is not none)
+
+    - name: Cache RFC049 demo listing action id after cluster start
+      ansible.builtin.set_fact:
+        real_capital_demo_listing_action_id_hex: "{{ real_capital_demo_listing_submit.json.result['action_id_hex'] }}"
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+        - real_capital_demo_listing_submit is defined
+        - real_capital_demo_listing_submit.json is defined
+        - real_capital_demo_listing_submit.json.result is defined
+
+    - name: Wait for RFC049 demo pilot listing to process on live cluster
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_getRealCapitalGovernanceActionStatus
+          params:
+            action_id_hex: "{{ real_capital_demo_listing_action_id_hex }}"
+          id: "get-rfc049-demo-listing-status-post-cluster"
+        return_content: true
+        status_code: 200
+      register: real_capital_demo_listing_status
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+        - real_capital_demo_listing_action_id_hex is defined
+      until:
+        - real_capital_demo_listing_status.status == 200
+        - real_capital_demo_listing_status.json.result.status in ['processed', 'rejected']
+      retries: 40
+      delay: 1
+      failed_when:
+        - real_capital_demo_listing_status.status != 200
+          or (real_capital_demo_listing_status.json.error is defined and real_capital_demo_listing_status.json.error is not none)
+          or real_capital_demo_listing_status.json.result.status == 'rejected'
+
+    - name: Read RFC049 demo principal vault positions before deposit
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_listVaultPositions
+          params:
+            principal: "{{ and_chain_real_capital_demo_principal_account_id }}"
+            limit: 20
+          id: "list-rfc049-demo-vault-positions-pre-deposit"
+        return_content: true
+        status_code: 200
+      register: real_capital_demo_positions_before_deposit
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+      failed_when:
+        - real_capital_demo_positions_before_deposit.status != 200
+          or (real_capital_demo_positions_before_deposit.json.error is defined and real_capital_demo_positions_before_deposit.json.error is not none)
+
+    - name: Read validator head for RFC049 demo deposit timestamp
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_chainInfo
+          params: {}
+          id: "get-rfc049-demo-validator-chain-info"
+        return_content: true
+        status_code: 200
+      register: real_capital_demo_validator_chain_info
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+        - (
+            real_capital_demo_positions_before_deposit.json.result['items']
+            | selectattr('delegation_id_hex', 'equalto', real_capital_demo_delegation_id_hex)
+            | list
+            | length
+          ) == 0
+      failed_when:
+        - real_capital_demo_validator_chain_info.status != 200
+          or (real_capital_demo_validator_chain_info.json.error is defined and real_capital_demo_validator_chain_info.json.error is not none)
+
+    - name: Cache RFC049 demo deposit timestamp from validator head
+      ansible.builtin.set_fact:
+        post_cluster_deposit_timestamp_ms: "{{ (real_capital_demo_validator_chain_info.json.result.head_timestamp_ms | int) + 1 }}"
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+        - real_capital_demo_validator_chain_info is defined
+        - real_capital_demo_validator_chain_info.json is defined
+        - real_capital_demo_validator_chain_info.json.result is defined
+
+    - name: Submit RFC049 demo principal deposit into listed delegation on live cluster
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        headers:
+          authorization: "Bearer {{ and_chain_operator_token }}"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_submitDepositToDelegation
+          params:
+            principal: "{{ and_chain_real_capital_demo_principal_account_id }}"
+            delegation_id_hex: "{{ real_capital_demo_delegation_id_hex }}"
+            amount: "{{ and_chain_real_capital_demo_initial_deposit_micro_usdc }}"
+            timestamp_ms: "{{ post_cluster_deposit_timestamp_ms }}"
+          id: "submit-rfc049-demo-principal-deposit-post-cluster"
+        return_content: true
+        status_code: 200
+      register: real_capital_demo_deposit_submit
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+        - (
+            real_capital_demo_positions_before_deposit.json.result['items']
+            | selectattr('delegation_id_hex', 'equalto', real_capital_demo_delegation_id_hex)
+            | list
+            | length
+          ) == 0
+      failed_when:
+        - real_capital_demo_deposit_submit.status != 200
+          or (real_capital_demo_deposit_submit.json.error is defined and real_capital_demo_deposit_submit.json.error is not none)
+
+    - name: Cache RFC049 demo deposit action id after cluster submit
+      ansible.builtin.set_fact:
+        real_capital_demo_deposit_action_id_hex: "{{ real_capital_demo_deposit_submit.json.result['action_id_hex'] }}"
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+        - real_capital_demo_deposit_submit is defined
+        - real_capital_demo_deposit_submit.json is defined
+        - real_capital_demo_deposit_submit.json.result is defined
+
+    - name: Wait for RFC049 demo principal deposit to process on live cluster
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_getDelegationActionStatus
+          params:
+            action_id_hex: "{{ real_capital_demo_deposit_action_id_hex }}"
+          id: "get-rfc049-demo-principal-deposit-status-post-cluster"
+        return_content: true
+        status_code: 200
+      register: real_capital_demo_deposit_status
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+        - real_capital_demo_deposit_action_id_hex is defined
+      until:
+        - real_capital_demo_deposit_status.status == 200
+        - real_capital_demo_deposit_status.json.result.status in ['processed', 'rejected']
+      retries: 40
+      delay: 1
+      failed_when:
+        - real_capital_demo_deposit_status.status != 200
+          or (real_capital_demo_deposit_status.json.error is defined and real_capital_demo_deposit_status.json.error is not none)
+          or real_capital_demo_deposit_status.json.result.status == 'rejected'
+
+    - name: Verify RFC049 demo listing is readable on live cluster
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_getRealCapitalListing
+          params:
+            vault_id_hex: "{{ real_capital_demo_vault_id_hex }}"
+          id: "get-rfc049-demo-listing-post-cluster"
+        return_content: true
+        status_code: 200
+      register: real_capital_demo_listing_read
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+      failed_when:
+        - real_capital_demo_listing_read.status != 200
+          or (real_capital_demo_listing_read.json.error is defined and real_capital_demo_listing_read.json.error is not none)
+          or not (real_capital_demo_listing_read.json.result.present | default(false))
+          or real_capital_demo_listing_read.json.result.listing.mode != real_capital_demo_listing_mode
+          or not (real_capital_demo_listing_read.json.result.listing.tier0_pilot_exception | default(false))
+          or not (real_capital_demo_listing_read.json.result.listing.deposit_enabled | default(false))
+
+    - name: Verify RFC049 demo vault position is seeded on live cluster
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_listVaultPositions
+          params:
+            principal: "{{ and_chain_real_capital_demo_principal_account_id }}"
+            limit: 20
+          id: "list-rfc049-demo-vault-positions-post-cluster"
+        return_content: true
+        status_code: 200
+      register: real_capital_demo_positions_after_deposit
+      when:
+        - seed_enabled
+        - real_capital_demo_enabled
+      failed_when:
+        - real_capital_demo_positions_after_deposit.status != 200
+          or (real_capital_demo_positions_after_deposit.json.error is defined and real_capital_demo_positions_after_deposit.json.error is not none)
+          or (
+            real_capital_demo_positions_after_deposit.json.result['items']
+            | selectattr('delegation_id_hex', 'equalto', real_capital_demo_delegation_id_hex)
+            | list
+            | length
+          ) == 0

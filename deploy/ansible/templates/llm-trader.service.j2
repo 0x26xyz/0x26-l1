@@ -1,0 +1,18 @@
+[Unit]
+Description=Kombat testnet LLM-driven directional trading agent (example)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Restart=always
+RestartSec=5
+EnvironmentFile={{ llm_trader_env_file }}
+ExecStart={{ llm_trader_venv_dir }}/bin/and-llm-trader run{% if llm_trader_run_dry_run | bool %} --dry-run{% endif %}
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

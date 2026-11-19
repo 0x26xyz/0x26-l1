@@ -1,0 +1,482 @@
+{
+  "title": "0x26 Chain application, workload, and telemetry contracts",
+  "prepared_on": "2026-11-16",
+  "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+  "april_reference_revision": "37d360898ef8293bceeab569ae5eb6b8176116c1",
+  "source_scope": "The 27 April revision is a post-hoc source proxy. It already has fixed-count draining and the default-on insertion flag. It follows runs 180-182 and the partial-flush revert. It does not establish the exact source or binary identity for each measured run from 118 through 219. The development log supplies measurements; selected upstream changes supply the partial-flush mechanism and revert.",
+  "workload": {
+    "retained_defaults": {
+      "workload": "place-order",
+      "side": "bid",
+      "price_ticks": 1000,
+      "quantity_lots": 1,
+      "time_in_force": "Gtc",
+      "post_only": false,
+      "harness_market_id": 7,
+      "harness_market_count": 1,
+      "harness_warmup_seconds": 5
+    },
+    "wrapper_side_or_price_override": false,
+    "per_run_full_arguments_available": false,
+    "structural_eligibility": "Effectively 100% by construction in steady-state eligible bodies of one-sided equal-price orders. Empty/singleton bodies, rejections, and additional runtime items are separate.",
+    "real_flow_eligible_fraction": null
+  },
+  "counter_semantics": {
+    "not_a_whole_body_hit_rate": true,
+    "reasons": [
+      "Sharded helpers count market groups; contiguous helpers count local resting batches.",
+      "Early whole-body unsupported returns are not all included in attempts.",
+      "The direct path records helper statistics only after successful metadata installation.",
+      "The general executor also records statistics into the same counters."
+    ],
+    "live_read_attempt": "Three configured validator endpoints did not yield metrics. No service was started or changed."
+  },
+  "application_error": {
+    "april": "Earlier canonical policy commits are not undone when a later commit fails. Nonce-only body filtering on retry can omit an already-advanced prefix. A persistent rejection can prevent progress.",
+    "may": "The payload filter simulates candidates first. This reduces exposure, but the durable wrapper does not inspect the inner application Result.",
+    "durable_control_flow": [
+      "Clone engine S0 into C.",
+      "Run f(C), obtaining T, which can be Err(NodeError) after a mutation.",
+      "Build and commit the plan for C.",
+      "Install C into the canonical engine.",
+      "Return Ok(T)."
+    ],
+    "storage_error": "A metadata, plan, or backend error returns before clone installation. This is separate from the inner application error.",
+    "reachability_scope": "Source-based conditional analysis. No injected failure or live wedge was reproduced. No claim that every late application error is reachable after the May prefilter."
+  },
+  "duplicate_key": {
+    "april": "A duplicate reaching the resting-batch check fails the execution call. The general commit loop also propagates its error, but changes occur on overlays.",
+    "may": "The simulated payload filter ordinarily rejects the duplicate and cascades later requests from that policy, while retaining valid requests from other policies."
+  },
+  "rejection_context": "General metadata receives the filter rejection list. Direct metadata receives an empty list. When the retained body selects the direct path, this commit emits no IntentRejected events for those filtered rejections, does not remove those intents from the local mempool if present, and omits their rejection-based proposer-frontier refresh. Other later cleanup is separate. This is source analysis, not a new differential run.",
+  "alternative_storage": "Copy-on-write, persistent maps, and touched-market overlays are alternative general copy reductions. No comparative result is recorded.",
+  "deployed_gain": "Per-candidate full-store filter copies and the outer durable engine clone remain before the May prechecked commit. The April gain supplies no measured estimate of deployed speedup.",
+  "new_blockchain_tests": 0,
+  "new_blockchain_builds": 0,
+  "new_cluster_runs": 0,
+  "implementation_excerpts": [
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/node/src/persistence.rs",
+      "source_file_sha256": "4803767fa96d2d91d8a2349f6f9365de92787ce537af8e3f39af7580dbc01081",
+      "label": "apply_engine_mutation_durable",
+      "source_start_line": 1371,
+      "source_end_line": 1388,
+      "code": "pub(crate) fn apply_engine_mutation_durable<T, F>(\n    engine: &mut SingleNodeEngine,\n    backend: &AnyStateBackend,\n    timestamp_ms: u64,\n    mode: SyncMode,\n    f: F,\n) -> Result<T, DurableCommitError>\nwhere\n    F: FnOnce(&mut SingleNodeEngine) -> T,\n{\n    let mut clone = engine.clone();\n    let result = f(&mut clone);\n    let meta = engine_commit_meta(&clone, ENGINE_CANONICAL_RECORD_VERSION, timestamp_ms)?;\n    let plan = build_durable_commit_plan(engine, &clone, meta)?;\n    apply_durable_commit_plan_with_mode(backend, plan, mode)?;\n    *engine = clone;\n    Ok(result)\n}\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/node/src/engine_handle.rs",
+      "source_file_sha256": "fedd0dbb46667f5fc9e4243e5b954b9f5103e161696a52a4cce0ed993d6d1904",
+      "label": "with_engine_mutation",
+      "source_start_line": 915,
+      "source_end_line": 985,
+      "code": "    fn with_engine_mutation<T, F, P>(\n        &self,\n        timestamp_ms: u64,\n        mode: SyncMode,\n        profile_kind: Option<EngineLockProfileKind>,\n        f: F,\n        on_durable_error: P,\n    ) -> LockResult<T>\n    where\n        F: FnOnce(&mut SingleNodeEngine) -> T,\n        P: FnOnce(crate::persistence::DurableCommitError) -> T,\n    {\n        let backend = self.durable_backend.clone();\n        let wait_started = Instant::now();\n        match self.compat_lock(None) {\n            Ok(mut engine) => {\n                let acquired_at = Instant::now();\n                let result = if let Some(backend) = backend {\n                    match crate::persistence::apply_engine_mutation_durable(\n                        &mut engine,\n                        &backend,\n                        timestamp_ms,\n                        mode,\n                        f,\n                    ) {\n                        Ok(result) => result,\n                        Err(error) => on_durable_error(error),\n                    }\n                } else {\n                    f(&mut engine)\n                };\n                let hold_ns = duration_as_nanos_u64(acquired_at.elapsed());\n                drop(engine);\n                if let Some(profile_kind) = profile_kind {\n                    self.record_lock_profile(\n                        profile_kind,\n                        duration_as_nanos_u64(acquired_at.duration_since(wait_started)),\n                        hold_ns,\n                    );\n                }\n                Ok(result)\n            }\n            Err(poisoned) => {\n                let acquired_at = Instant::now();\n                let mut engine = poisoned.into_inner();\n                let result = if let Some(backend) = backend {\n                    match crate::persistence::apply_engine_mutation_durable(\n                        &mut engine,\n                        &backend,\n                        timestamp_ms,\n                        mode,\n                        f,\n                    ) {\n                        Ok(result) => result,\n                        Err(error) => on_durable_error(error),\n                    }\n                } else {\n                    f(&mut engine)\n                };\n                let hold_ns = duration_as_nanos_u64(acquired_at.elapsed());\n                if let Some(profile_kind) = profile_kind {\n                    self.record_lock_profile(\n                        profile_kind,\n                        duration_as_nanos_u64(acquired_at.duration_since(wait_started)),\n                        hold_ns,\n                    );\n                }\n                Err(PoisonError::new(result))\n            }\n        }\n    }\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/node/src/engine_handle.rs",
+      "source_file_sha256": "fedd0dbb46667f5fc9e4243e5b954b9f5103e161696a52a4cce0ed993d6d1904",
+      "label": "apply_mahi_committed_blocks_merged",
+      "source_start_line": 785,
+      "source_end_line": 811,
+      "code": "    pub fn apply_mahi_committed_blocks_merged(\n        &self,\n        blocks: &[MahiBlock],\n    ) -> LockResult<Result<Hash, crate::NodeError>> {\n        let _policy = self.policy.track_lock();\n        let _dag = self.dag.track_lock();\n        let _mempool = self.mempool.track_lock();\n        let _market_state = self.market_state.track_lock();\n        let _chain_tail = self.chain_tail.track_lock();\n        let _events = self.events.track_lock();\n        let mutation_timestamp_ms = blocks\n            .iter()\n            .map(|block| block.timestamp_ms)\n            .max()\n            .unwrap_or(0);\n        self.with_engine_mutation(\n            mutation_timestamp_ms,\n            SyncMode::Sync,\n            None,\n            |engine| {\n                engine\n                    .apply_mahi_committed_blocks_merged(blocks)\n                    .map(block_hash)\n            },\n            durable_error_result,\n        )\n    }\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/node/src/engine_block_flow.rs",
+      "source_file_sha256": "586ac5035cbf5520aae1190d986b841edd4e95ac73ac1a2bcac7160048a3ee54",
+      "label": "filter_mahi_intent_payload",
+      "source_start_line": 997,
+      "source_end_line": 1091,
+      "code": "    pub(super) fn filter_mahi_intent_payload<'a, I>(\n        &self,\n        intents: I,\n        market_marks: &BTreeMap<u64, OraclePrice>,\n        market_index_prices: &BTreeMap<u64, OraclePrice>,\n        positions_after_funding: &BTreeMap<(u64, u64), PositionLedger>,\n        block_number: u64,\n        timestamp_ms: u64,\n    ) -> (Vec<BlockItem>, Vec<RejectedIntent>)\n    where\n        I: IntoIterator<Item = &'a SignedIntent>,\n    {\n        let mut expected_nonces = BTreeMap::new();\n        let mut burned_policies = BTreeSet::new();\n        let mut simulated_policy_store = self.policy_store.clone();\n        let mut simulated_order_books = BTreeMap::new();\n        let mut simulated_resting_order_mandates = self.resting_order_mandates.clone();\n        let mut simulated_isolated_collateral = BTreeMap::new();\n        let mut items = Vec::new();\n        let mut rejected = Vec::new();\n\n        for signed_intent in intents {\n            let policy_id = signed_intent.intent.policy_id;\n            if burned_policies.contains(&policy_id) {\n                rejected.push(RejectedIntent {\n                    signed_intent: signed_intent.clone(),\n                    reason: IntentRejectionReason::PredecessorIntentRejected,\n                    order_reason: None,\n                });\n                continue;\n            }\n\n            let expected_nonce = expected_nonces\n                .entry(policy_id)\n                .or_insert_with(|| self.policy_store.next_intent_nonce(policy_id).unwrap_or(1));\n            if signed_intent.intent.nonce != *expected_nonce {\n                continue;\n            }\n\n            let mut next_policy_store = simulated_policy_store.clone();\n            let mut next_order_books = simulated_order_books.clone();\n            let mut next_resting_order_mandates = simulated_resting_order_mandates.clone();\n            let mut next_isolated_collateral = simulated_isolated_collateral.clone();\n            match simulate_intent_on_runtime_state(\n                &mut next_policy_store,\n                &self.mandates,\n                &self.delegations,\n                &self.account_operators,\n                simulation_order_books_for_intent(\n                    &mut next_order_books,\n                    &self.order_books,\n                    signed_intent,\n                ),\n                &mut next_resting_order_mandates,\n                simulation_collateral_for_intent(\n                    &mut next_isolated_collateral,\n                    &self.isolated_collateral,\n                    signed_intent,\n                ),\n                &self.frozen_accounts,\n                &self.markets,\n                &self.paused_markets,\n                market_marks,\n                market_index_prices,\n                &self.market_oracle_config,\n                positions_after_funding,\n                signed_intent,\n                self.head().header.chain_id,\n                block_number,\n                timestamp_ms,\n                PolicyAdmissionCommitMode::PreverifiedSession,\n            ) {\n                Ok(_) => {\n                    simulated_policy_store = next_policy_store;\n                    simulated_order_books = next_order_books;\n                    simulated_resting_order_mandates = next_resting_order_mandates;\n                    simulated_isolated_collateral = next_isolated_collateral;\n                    items.push(BlockItem::Intent(signed_intent.clone()));\n                    *expected_nonce = expected_nonce.saturating_add(1);\n                }\n                Err(error) if transient_intent_blocker(&error) => {}\n                Err(error) => {\n                    let (reason, order_reason) = rejection_context_from_node_error(&error);\n                    rejected.push(RejectedIntent {\n                        signed_intent: signed_intent.clone(),\n                        reason,\n                        order_reason,\n                    });\n                    burned_policies.insert(policy_id);\n                }\n            }\n        }\n\n        (items, rejected)\n    }\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/node/src/lib.rs",
+      "source_file_sha256": "7622188c5ef07756425b1bbd4875ac7101b80b7501b25ed6a2fd1222b2cd51ac",
+      "label": "record_phase6_resting_batch_stats",
+      "source_start_line": 962,
+      "source_end_line": 979,
+      "code": "    fn record_phase6_resting_batch_stats(&mut self, stats: RestingBatchCommitStats) {\n        if stats.attempts == 0 && stats.accepted == 0 && stats.items == 0 {\n            return;\n        }\n        self.telemetry.on_phase6_resting_batch(\n            stats.attempts,\n            stats.accepted,\n            stats.items,\n            stats.unsupported,\n            stats.rejected,\n            stats.gather_ns,\n            stats.precheck_ns,\n            stats.admission_ns,\n            stats.policy_ns,\n            stats.matching_ns,\n            stats.event_ns,\n        );\n    }\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/loadgen/src/main.rs",
+      "source_file_sha256": "f30832057576668d9fd332d99a66a0bce9c6ba450ad05180ec6c09aeb7dd2dc5",
+      "label": "resolve_side_and_price",
+      "source_start_line": 575,
+      "source_end_line": 599,
+      "code": "fn resolve_side_and_price(\n    mode: SideMode,\n    client_order_id: u64,\n    price_ticks: u64,\n    spread_ticks: u64,\n) -> (OrderSide, u64) {\n    match mode {\n        SideMode::Bid => (OrderSide::Bid, price_ticks),\n        SideMode::Ask => (OrderSide::Ask, price_ticks),\n        SideMode::Spread => {\n            if client_order_id & 1 == 0 {\n                (OrderSide::Bid, price_ticks.saturating_sub(spread_ticks))\n            } else {\n                (OrderSide::Ask, price_ticks.saturating_add(spread_ticks))\n            }\n        }\n        SideMode::CrossSelf => {\n            if client_order_id & 1 == 0 {\n                (OrderSide::Bid, price_ticks)\n            } else {\n                (OrderSide::Ask, price_ticks)\n            }\n        }\n    }\n}\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/loadgen/src/main.rs",
+      "source_file_sha256": "f30832057576668d9fd332d99a66a0bce9c6ba450ad05180ec6c09aeb7dd2dc5",
+      "label": "generator defaults and order shape",
+      "source_start_line": 180,
+      "source_end_line": 209,
+      "code": "    /// Number of consecutive markets to distribute PlaceOrder workers across.\n    /// `1` preserves the historical single-market benchmark. Values greater\n    /// than one assign worker N to `market_id + (N % market_count)`.\n    #[arg(long, default_value_t = 1)]\n    market_count: u64,\n\n    /// Side mode for generated PlaceOrder intents. Default `bid` produces a\n    /// one-sided resting book on a single account, which avoids self-trade\n    /// prevention and keeps the policy nonce frontier advancing.\n    #[arg(long, value_enum, default_value_t = SideMode::Bid)]\n    side: SideMode,\n\n    /// Limit price (in price ticks) for all generated orders. For `spread`\n    /// mode, this is the mid \u2014 bids post at `price_ticks - spread_ticks`\n    /// and asks at `price_ticks + spread_ticks`.\n    #[arg(long, default_value_t = 1_000)]\n    price_ticks: u64,\n\n    /// Half-spread (in price ticks) used only when `--side spread`.\n    #[arg(long, default_value_t = 100)]\n    spread_ticks: u64,\n\n    /// Order quantity in lots.\n    #[arg(long, default_value_t = 1)]\n    quantity_lots: u64,\n\n    /// Per-intent expires-at offset from now, in ms.\n    #[arg(long, default_value_t = 60_000)]\n    intent_ttl_ms: u64,\n\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/scripts/loadtest_local_cluster.sh",
+      "source_file_sha256": "719c39a1fd257ac8bfc0491429d35d9f663e05cc82dca35197a57ab4f32b86c7",
+      "label": "load-generator arguments without side or price override",
+      "source_start_line": 1294,
+      "source_end_line": 1324,
+      "code": "  done\n\n  for shard_log in \"${LOADGEN_LOGS[@]}\"; do\n    printf '\\n=== %s ===\\n' \"$(basename \"${shard_log}\")\" >> \"${LOADTEST_LOG}\"\n    cat \"${shard_log}\" >> \"${LOADTEST_LOG}\"\n  done\nelse\n  info \"running localhost load against ${LOADTEST_TARGET_VALIDATOR} (${TARGET_URL})\"\n  LOADGEN_ARGS=(\n    --url \"${TARGET_URL}\"\n    --workload place-order\n    --writers-json \"${WRITERS_JSON}\"\n    --concurrency \"${WRITER_COUNT}\"\n    --pipeline-depth \"${LOADTEST_PIPELINE_DEPTH}\"\n    --batch-size \"${LOADTEST_BATCH_SIZE}\"\n    --rps \"${TARGET_RPS}\"\n    --duration-secs \"${DURATION_SECS}\"\n    --warmup-secs \"${LOADTEST_WARMUP_SECS}\"\n    --progress-every-secs \"${LOADTEST_PROGRESS_EVERY_SECS}\"\n    --chain-id \"${CHAIN_ID}\"\n    --market-id \"${LOADTEST_MARKET_ID}\"\n    --market-count \"${LOADTEST_MARKET_COUNT}\"\n  )\n  if [[ -n \"${LOADGEN_STATE_URL_EFFECTIVE}\" ]]; then\n    LOADGEN_ARGS+=(--state-url \"${LOADGEN_STATE_URL_EFFECTIVE}\")\n  fi\n  if [[ -n \"${LOADTEST_REQUEST_TIMEOUT_SECS:-}\" ]]; then\n    LOADGEN_ARGS+=(--request-timeout-secs \"${LOADTEST_REQUEST_TIMEOUT_SECS}\")\n  fi\n  \"${LOADGEN_BINARY_PATH}\" \"${LOADGEN_ARGS[@]}\" | tee \"${LOADTEST_LOG}\"\nfi\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/node/src/engine_runtime.rs",
+      "source_file_sha256": "16d4f111bfd4e3633c997acd85b652e505cd144ff61c613acb81fc3b5a478c00",
+      "label": "direct policy commit loop",
+      "source_start_line": 780,
+      "source_end_line": 799,
+      "code": "        .collect::<Result<Vec<_>, NodeError>>()?;\n    stats.admission_ns = duration_nanos_u64(admission_started.elapsed());\n\n    let policy_started = Instant::now();\n    for (signed_intent, admission, policy_account_scope) in admissions.iter() {\n        commit_stacked_mandate_admission(\n            policy_store,\n            signed_intent,\n            admission,\n            *policy_account_scope,\n        )?;\n        policy_store\n            .commit_preverified_admission(signed_intent.intent.policy_id, admission)\n            .map_err(NodeError::Policy)?;\n    }\n    stats.policy_ns = duration_nanos_u64(policy_started.elapsed());\n\n    let matching_started = Instant::now();\n    let mut outcomes_by_item = vec![None; body.items.len()];\n    if worker_market_matching {\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/node/src/engine_runtime.rs",
+      "source_file_sha256": "16d4f111bfd4e3633c997acd85b652e505cd144ff61c613acb81fc3b5a478c00",
+      "label": "general helper error propagation",
+      "source_start_line": 397,
+      "source_end_line": 445,
+      "code": "            market_marks,\n            market_index_prices,\n            market_oracle_config,\n            positions,\n            chain_id,\n            &body.items,\n            item_index,\n            block_number,\n            timestamp_ms,\n            commit_mode,\n            &mut resting_batch_stats,\n        )? {\n            events.append(&mut batch_events);\n            item_index += consumed;\n            continue;\n        }\n\n        let item = &body.items[item_index];\n        if let BlockItem::Intent(signed_intent) = item {\n            let mut intent_events = simulate_intent_on_runtime_state(\n                policy_store,\n                mandates,\n                delegations,\n                account_operators,\n                order_books,\n                resting_order_mandates,\n                isolated_collateral,\n                frozen_accounts,\n                markets,\n                paused_markets,\n                market_marks,\n                market_index_prices,\n                market_oracle_config,\n                positions,\n                signed_intent,\n                chain_id,\n                block_number,\n                timestamp_ms,\n                commit_mode,\n            )?;\n            events.push(RuntimeEventKind::IntentExecuted {\n                intent_id: intent_id(signed_intent),\n                policy_id: signed_intent.intent.policy_id,\n                nonce: signed_intent.intent.nonce,\n            });\n            events.append(&mut intent_events);\n        }\n        item_index += 1;\n    }\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/node/src/engine_runtime.rs",
+      "source_file_sha256": "16d4f111bfd4e3633c997acd85b652e505cd144ff61c613acb81fc3b5a478c00",
+      "label": "contiguous helper attempts and early outcomes",
+      "source_start_line": 995,
+      "source_end_line": 1025,
+      "code": "        orders.push(order);\n    }\n\n    if signed_intents.len() < 2 {\n        return Ok(None);\n    }\n    stats.gather_ns = stats\n        .gather_ns\n        .saturating_add(duration_nanos_u64(gather_started.elapsed()));\n\n    stats.attempts = stats.attempts.saturating_add(1);\n    let precheck_started = Instant::now();\n    let batch_check = order_books.get(&market_id).map_or_else(\n        || SingleMarketBook::new(market_id).can_submit_resting_batch(&orders, timestamp_ms),\n        |book| book.can_submit_resting_batch(&orders, timestamp_ms),\n    );\n    stats.precheck_ns = stats\n        .precheck_ns\n        .saturating_add(duration_nanos_u64(precheck_started.elapsed()));\n    match batch_check {\n        Ok(()) => {}\n        Err(RestingBatchError::Unsupported) => {\n            stats.unsupported = stats.unsupported.saturating_add(1);\n            return Ok(None);\n        }\n        Err(RestingBatchError::Reject(reason)) => {\n            stats.rejected = stats.rejected.saturating_add(1);\n            return Err(NodeError::Order(reason));\n        }\n    }\n    ensure_resting_order_batch_preserves_initial_margin(\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/node/src/engine_block_flow.rs",
+      "source_file_sha256": "586ac5035cbf5520aae1190d986b841edd4e95ac73ac1a2bcac7160048a3ee54",
+      "label": "general clone, commit, and install path",
+      "source_start_line": 1372,
+      "source_end_line": 1442,
+      "code": "            let commit_started = Instant::now();\n            let mut policy_store = self.policy_store.clone();\n            let mut order_books = self.order_books.clone();\n            let mut resting_order_mandates = self.resting_order_mandates.clone();\n            let mut isolated_collateral = self.isolated_collateral.clone();\n            let commit_output = commit_block_intents_preverified_with_stats(\n                &mut policy_store,\n                &self.mandates,\n                &self.delegations,\n                &self.account_operators,\n                &mut order_books,\n                &mut resting_order_mandates,\n                &mut isolated_collateral,\n                &self.frozen_accounts,\n                &self.markets,\n                &self.paused_markets,\n                &market_marks,\n                &market_index_prices,\n                &self.market_oracle_config,\n                &positions_after_funding,\n                parent.header.chain_id,\n                block_number,\n                &body,\n                block_number,\n                timestamp_ms,\n            )?;\n            let resting_batch_stats = commit_output.resting_batch_stats;\n            let committed_events = commit_output.events;\n            let commit_elapsed = commit_started.elapsed();\n            let roots_started = Instant::now();\n            let tx_root = body_root(&body);\n            let event_root = mahi_runtime_event_root(&committed_events);\n            let state_root = mahi_native_state_root(\n                &parent.header.state_root,\n                &tx_root,\n                &event_root,\n                effective_round,\n                timestamp_ms,\n            );\n            let roots_elapsed = roots_started.elapsed();\n            let block = Block {\n                header: BlockHeader {\n                    chain_id: parent.header.chain_id,\n                    height: parent.header.height.saturating_add(1),\n                    round: effective_round,\n                    proposer,\n                    parent_hash: block_hash(&parent),\n                    parent_state_root: parent.header.state_root,\n                    tx_root,\n                    event_root,\n                    state_root,\n                    qc: synthetic_mahi_quorum_certificate(&parent),\n                    timestamp_ms,\n                },\n                body,\n            };\n            let install_started = Instant::now();\n            self.install_mahi_committed_block_state(\n                block,\n                policy_store,\n                order_books,\n                resting_order_mandates,\n                isolated_collateral,\n                rejected_intents,\n                committed_events,\n                Vec::new(),\n                true,\n            )?;\n            let install_elapsed = install_started.elapsed();\n            self.record_phase6_resting_batch_stats(resting_batch_stats);\n            if profile_execution {\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/node/src/engine_block_flow.rs",
+      "source_file_sha256": "586ac5035cbf5520aae1190d986b841edd4e95ac73ac1a2bcac7160048a3ee54",
+      "label": "fast metadata receives no rejected intents",
+      "source_start_line": 1588,
+      "source_end_line": 1605,
+      "code": "                event_root,\n                state_root,\n                qc: synthetic_mahi_quorum_certificate(parent),\n                timestamp_ms,\n            },\n            body,\n        };\n        let install_started = Instant::now();\n        self.install_mahi_committed_block_metadata(\n            block,\n            Vec::new(),\n            committed_events,\n            Vec::new(),\n        )?;\n        let install_elapsed = install_started.elapsed();\n        self.record_phase6_resting_batch_stats(resting_batch_stats);\n        if profile_execution {\n            eprintln!(\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/rpc/src/server_mahi.rs",
+      "source_file_sha256": "5dea2ed7b80fe37aa942b6586483eb25863b2f1cd4ff968eb2a816e18664424b",
+      "label": "requeue application error",
+      "source_start_line": 708,
+      "source_end_line": 736,
+      "code": "                            if let Ok(mut state_guard) = self.mahi_state.lock() {\n                                if let Some(state) = state_guard.as_mut() {\n                                    state.record_commit_execution_batch(chunk, execution_elapsed);\n                                    for block in chunk {\n                                        state.mark_block_executed(block.block_ref());\n                                    }\n                                }\n                            }\n                        }\n                        Ok(Err(error)) => {\n                            eprintln!(\n                                \"kombat_chain merged mahi commit execution failed for {} blocks: {:?}\",\n                                chunk.len(),\n                                error\n                            );\n                            let remaining = blocks[chunk_start..].to_vec();\n                            let _dag = self.engine.dag_domain().track_lock();\n                            if let Ok(mut state_guard) = self.mahi_state.lock() {\n                                if let Some(state) = state_guard.as_mut() {\n                                    state.requeue_execution_front(remaining);\n                                }\n                            }\n                            self.notify_mahi_commit_executor();\n                            thread::sleep(Duration::from_millis(10));\n                            failed = true;\n                        }\n                        Err(_) => {\n                            self.mahi_commit_executor\n                                .running\n"
+    },
+    {
+      "source_revision": "37d360898ef8293bceeab569ae5eb6b8176116c1",
+      "path": "chain/crates/node/src/engine_handle.rs",
+      "source_file_sha256": "9e86dff2093c95d3a3ea1f5d98b61ecfb685681cafa9c7c3d58dbad31a90a7db",
+      "label": "apply_mahi_committed_blocks_merged",
+      "source_start_line": 405,
+      "source_end_line": 428,
+      "code": "    pub fn apply_mahi_committed_blocks_merged(\n        &self,\n        blocks: &[MahiBlock],\n    ) -> LockResult<Result<Hash, crate::NodeError>> {\n        let _policy = self.policy.track_lock();\n        let _dag = self.dag.track_lock();\n        let _mempool = self.mempool.track_lock();\n        let _market_state = self.market_state.track_lock();\n        let _chain_tail = self.chain_tail.track_lock();\n        let _events = self.events.track_lock();\n        match self.compat_lock(None) {\n            Ok(mut engine) => Ok(engine\n                .apply_mahi_committed_blocks_merged(blocks)\n                .map(block_hash)),\n            Err(poisoned) => {\n                let mut engine = poisoned.into_inner();\n                Err(PoisonError::new(\n                    engine\n                        .apply_mahi_committed_blocks_merged(blocks)\n                        .map(block_hash),\n                ))\n            }\n        }\n    }\n"
+    },
+    {
+      "source_revision": "37d360898ef8293bceeab569ae5eb6b8176116c1",
+      "path": "chain/crates/node/src/lib.rs",
+      "source_file_sha256": "b41da06042a858d087e3593e82413d74eedfae74d8afab428c67c879d1ad0396",
+      "label": "April nonce-only merged-body filter",
+      "source_start_line": 4418,
+      "source_end_line": 4440,
+      "code": "            .expect(\"merged Mahi execution requires a last block\");\n        let body_started = Instant::now();\n        let mut expected_nonces = BTreeMap::new();\n        let body = BlockBody {\n            items: mahi_blocks\n                .iter()\n                .flat_map(|mahi_block| mahi_block.intents.iter())\n                .filter_map(|signed_intent| {\n                    let expected_nonce = expected_nonces\n                        .entry(signed_intent.intent.policy_id)\n                        .or_insert_with(|| {\n                            self.policy_store\n                                .next_intent_nonce(signed_intent.intent.policy_id)\n                                .unwrap_or(1)\n                        });\n                    if signed_intent.intent.nonce != *expected_nonce {\n                        return None;\n                    }\n                    *expected_nonce = expected_nonce.saturating_add(1);\n                    Some(BlockItem::Intent(signed_intent.clone()))\n                })\n                .collect(),\n        };\n"
+    },
+    {
+      "source_revision": "37d360898ef8293bceeab569ae5eb6b8176116c1",
+      "path": "chain/crates/node/src/lib.rs",
+      "source_file_sha256": "b41da06042a858d087e3593e82413d74eedfae74d8afab428c67c879d1ad0396",
+      "label": "April direct path then policy/book overlays",
+      "source_start_line": 4486,
+      "source_end_line": 4510,
+      "code": "            if phase6_inplace_resting_commit_enabled()\n                && self.try_apply_mahi_resting_body_in_place(\n                    &parent,\n                    effective_round,\n                    timestamp_ms,\n                    proposer,\n                    body.clone(),\n                    body_elapsed,\n                    total_started,\n                    profile_execution,\n                )?\n            {\n                return Ok(self.head());\n            }\n            let commit_started = Instant::now();\n            let mut policy_store = self.policy_store.clone();\n            let mut order_books = self.order_books.clone();\n            let commit_output = commit_block_intents_preverified_with_stats(\n                &mut policy_store,\n                &mut order_books,\n                &self.frozen_accounts,\n                &self.paused_markets,\n                &self.market_marks,\n                &self.market_index_prices,\n                &self.market_oracle_config,\n"
+    },
+    {
+      "source_revision": "37d360898ef8293bceeab569ae5eb6b8176116c1",
+      "path": "chain/crates/node/src/lib.rs",
+      "source_file_sha256": "b41da06042a858d087e3593e82413d74eedfae74d8afab428c67c879d1ad0396",
+      "label": "April direct policy loop",
+      "source_start_line": 7216,
+      "source_end_line": 7225,
+      "code": "\n    let policy_started = Instant::now();\n    for (signed_intent, admission) in admissions.iter() {\n        policy_store\n            .commit_preverified_admission(signed_intent.intent.policy_id, admission)\n            .map_err(NodeError::Policy)?;\n    }\n    stats.policy_ns = duration_nanos_u64(policy_started.elapsed());\n\n    let matching_started = Instant::now();\n"
+    },
+    {
+      "source_revision": "37d360898ef8293bceeab569ae5eb6b8176116c1",
+      "path": "chain/crates/policy/src/lib.rs",
+      "source_file_sha256": "7bf0efd3c10482afbf06164510058b955bd4d9edf24e4d2c870d9b72b8c03be2",
+      "label": "commit_preverified_admission",
+      "source_start_line": 916,
+      "source_end_line": 945,
+      "code": "    pub fn commit_preverified_admission(\n        &mut self,\n        policy_id: PolicyId,\n        admission: &PolicyAdmission,\n    ) -> Result<(), PolicyError> {\n        let delta = match self.preview_preverified_admission(policy_id, admission) {\n            Ok(delta) => delta,\n            Err(PolicyError::DrawdownExceededAndRevoked) => {\n                if !self.policies.contains_key(&policy_id) {\n                    return Err(PolicyError::UnknownPolicy(policy_id));\n                }\n                self.cascade_revoke(policy_id, admission.block_number, admission.timestamp_ms);\n                return Err(PolicyError::DrawdownExceededAndRevoked);\n            }\n            Err(error) => return Err(error),\n        };\n        let policy = self\n            .policies\n            .get_mut(&policy_id)\n            .ok_or(PolicyError::UnknownPolicy(policy_id))?;\n        if admission.intent_nonce != policy.next_intent_nonce {\n            return Err(PolicyError::InvalidIntentNonce {\n                expected: policy.next_intent_nonce,\n                actual: admission.intent_nonce,\n            });\n        }\n        policy.counters = delta.counters;\n        policy.next_intent_nonce = policy.next_intent_nonce.saturating_add(1);\n        Ok(())\n    }\n"
+    },
+    {
+      "source_revision": "37d360898ef8293bceeab569ae5eb6b8176116c1",
+      "path": "chain/crates/rpc/src/lib.rs",
+      "source_file_sha256": "5f47400077f6d348b34cf4fe1a3f6639787aa02f636d2b9a562e4fa32c604671",
+      "label": "April worker requeues an application error",
+      "source_start_line": 7307,
+      "source_end_line": 7324,
+      "code": "                        }\n                        Ok(Err(error)) => {\n                            eprintln!(\n                                \"kombat_chain merged mahi commit execution failed for {} blocks: {:?}\",\n                                chunk.len(),\n                                error\n                            );\n                            let remaining = blocks[chunk_start..].to_vec();\n                            let _dag = self.engine.dag_domain().track_lock();\n                            if let Ok(mut state_guard) = self.mahi_state.lock() {\n                                if let Some(state) = state_guard.as_mut() {\n                                    state.requeue_execution_front(remaining);\n                                }\n                            }\n                            self.notify_mahi_commit_executor();\n                            thread::sleep(Duration::from_millis(10));\n                            failed = true;\n                        }\n"
+    },
+    {
+      "source_revision": "37d360898ef8293bceeab569ae5eb6b8176116c1",
+      "path": "chain/crates/node/src/lib.rs",
+      "source_file_sha256": "b41da06042a858d087e3593e82413d74eedfae74d8afab428c67c879d1ad0396",
+      "label": "April direct helper receives canonical state",
+      "source_start_line": 4638,
+      "source_end_line": 4660,
+      "code": "        body_elapsed: std::time::Duration,\n        total_started: Instant,\n        profile_execution: bool,\n    ) -> Result<bool, NodeError> {\n        let commit_started = Instant::now();\n        let Some(commit_output) =\n            try_commit_market_sharded_resting_place_order_batch_including_single_shard(\n                &mut self.policy_store,\n                &mut self.order_books,\n                &self.frozen_accounts,\n                &self.paused_markets,\n                &self.market_marks,\n                &self.market_index_prices,\n                &self.market_oracle_config,\n                parent.header.chain_id,\n                &body,\n                parent.header.height.saturating_add(1),\n                timestamp_ms,\n            )?\n        else {\n            return Ok(false);\n        };\n        let resting_batch_stats = commit_output.resting_batch_stats;\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/policy/src/lib.rs",
+      "source_file_sha256": "0cc0d10df8a4c8adad9207ce46a399c714f1c1750b5236eb8c9e17a213be2c99",
+      "label": "PolicyStore owns and clones the policy map",
+      "source_start_line": 284,
+      "source_end_line": 287,
+      "code": "#[derive(Clone, Debug, Default, PartialEq, Eq, borsh::BorshSerialize, borsh::BorshDeserialize)]\npub struct PolicyStore {\n    policies: BTreeMap<PolicyId, PolicyRecord>,\n}\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/rpc/src/lib.rs",
+      "source_file_sha256": "d21df46e7998f83210296d182021702f8caf0ebf26f9cec534892955c6663989",
+      "label": "Commit detector queues blocks without a verification gate",
+      "source_start_line": 886,
+      "source_end_line": 917,
+      "code": "    fn advance_commit_detector(&mut self) -> usize {\n        let threshold_round = self.threshold_clock.round();\n        let mut committer =\n            UniversalCommitterBuilder::new(self.validators(), MahiCommitDagView::from(&self.dag))\n                .with_commit_rule(self.commit_rule)\n                .with_pipeline(self.pipeline)\n                .with_number_of_leaders(self.number_of_leaders)\n                .build();\n        let sequence = committer.try_commit(self.last_decided_leader, threshold_round);\n        if sequence.is_empty() {\n            return 0;\n        }\n\n        let committed_refs: Vec<_> = sequence\n            .iter()\n            .filter_map(|status| match status {\n                MahiLeaderStatus::Commit(reference) => Some(*reference),\n                MahiLeaderStatus::Skip(..) | MahiLeaderStatus::Undecided(..) => None,\n            })\n            .collect();\n        let committed = self.linearizer.handle_commit(&self.dag, committed_refs);\n        let mut newly_queued = 0;\n        for sub_dag in committed {\n            for block in sub_dag.blocks {\n                self.pending_execution.push_back(block);\n                newly_queued += 1;\n            }\n        }\n\n        for status in sequence {\n            let (author, round, decision, hash) = match status {\n                MahiLeaderStatus::Commit(reference) => {\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/rpc/src/lib.rs",
+      "source_file_sha256": "d21df46e7998f83210296d182021702f8caf0ebf26f9cec534892955c6663989",
+      "label": "Both drains and node-local batch selector",
+      "source_start_line": 943,
+      "source_end_line": 1010,
+      "code": "        let mut ready = Vec::new();\n        loop {\n            let Some(block) = self.pending_execution.front() else {\n                break;\n            };\n            let status = self\n                .verification_status\n                .get(&block.block_ref())\n                .copied()\n                .unwrap_or(MahiBlockVerificationStatus::Pending);\n            match status {\n                MahiBlockVerificationStatus::Verified => {\n                    ready.push(\n                        self.pending_execution\n                            .pop_front()\n                            .expect(\"front block should exist\"),\n                    );\n                }\n                MahiBlockVerificationStatus::Pending | MahiBlockVerificationStatus::Failed => break,\n            }\n        }\n        ready\n    }\n\n    fn drain_ready_execution_for_batch(&mut self, execution_batch_size: usize) -> Vec<MahiBlock> {\n        let execution_batch_size = execution_batch_size.max(1);\n        if execution_batch_size == 1 {\n            return self.drain_ready_execution();\n        }\n\n        let mut verified = 0_usize;\n        for block in &self.pending_execution {\n            let status = self\n                .verification_status\n                .get(&block.block_ref())\n                .copied()\n                .unwrap_or(MahiBlockVerificationStatus::Pending);\n            if status != MahiBlockVerificationStatus::Verified {\n                break;\n            }\n            verified = verified.saturating_add(1);\n        }\n\n        let executable = verified - (verified % execution_batch_size);\n        let mut ready = Vec::with_capacity(executable);\n        for _ in 0..executable {\n            if let Some(block) = self.pending_execution.pop_front() {\n                ready.push(block);\n            }\n        }\n        ready\n    }\n\n    fn default_execution_batch_size(&self) -> usize {\n        if env::var(MAHI_MERGED_EXECUTION_BATCH_ENV)\n            .ok()\n            .and_then(|value| value.trim().parse::<usize>().ok())\n            .is_some()\n        {\n            return parse_mahi_merged_execution_batch_size();\n        }\n        if self.leader_schedule.validator_count() > 1 {\n            DEFAULT_MAHI_MERGED_EXECUTION_BATCH_SIZE\n        } else {\n            1\n        }\n    }\n\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/rpc/src/env_config.rs",
+      "source_file_sha256": "de1f7fb9b2ba78c34996a8ee544726a88dcdb6a4510a51ea0c73100d807c674a",
+      "label": "Batch setting name",
+      "source_start_line": 5,
+      "source_end_line": 5,
+      "code": "pub(crate) const MAHI_MERGED_EXECUTION_BATCH_ENV: &str = \"KOMBAT_MAHI_MERGED_EXECUTION_BATCH\";\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/rpc/src/env_config.rs",
+      "source_file_sha256": "de1f7fb9b2ba78c34996a8ee544726a88dcdb6a4510a51ea0c73100d807c674a",
+      "label": "Default batch size",
+      "source_start_line": 26,
+      "source_end_line": 26,
+      "code": "pub(crate) const DEFAULT_MAHI_MERGED_EXECUTION_BATCH_SIZE: usize = 8;\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/rpc/src/env_config.rs",
+      "source_file_sha256": "de1f7fb9b2ba78c34996a8ee544726a88dcdb6a4510a51ea0c73100d807c674a",
+      "label": "Batch-size parser",
+      "source_start_line": 81,
+      "source_end_line": 87,
+      "code": "pub(crate) fn parse_mahi_merged_execution_batch_size() -> usize {\n    env::var(MAHI_MERGED_EXECUTION_BATCH_ENV)\n        .ok()\n        .and_then(|value| value.trim().parse::<usize>().ok())\n        .filter(|value| *value > 0)\n        .unwrap_or(DEFAULT_MAHI_MERGED_EXECUTION_BATCH_SIZE)\n}\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/rpc/src/server_mahi.rs",
+      "source_file_sha256": "5dea2ed7b80fe37aa942b6586483eb25863b2f1cd4ff968eb2a816e18664424b",
+      "label": "Worker reads batch size before draining",
+      "source_start_line": 672,
+      "source_end_line": 684,
+      "code": "                let Some(state) = state_guard.as_mut() else {\n                    continue;\n                };\n                state.mark_commit_executor_wake();\n                state.advance_commit_detector();\n                let merged_execution_batch_size = state.default_execution_batch_size();\n                (\n                    state.drain_ready_execution_for_batch(merged_execution_batch_size),\n                    merged_execution_batch_size,\n                )\n            };\n            if blocks.is_empty() {\n                let _dag = self.engine.dag_domain().track_lock();\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/rpc/src/server_mahi.rs",
+      "source_file_sha256": "5dea2ed7b80fe37aa942b6586483eb25863b2f1cd4ff968eb2a816e18664424b",
+      "label": "Verification result handler and job submission",
+      "source_start_line": 803,
+      "source_end_line": 854,
+      "code": "    pub(super) fn apply_mahi_sigverify_result(&self, result: MahiSigverifyResult) {\n        let _dag = self.engine.dag_domain().track_lock();\n        let Ok(mut state_guard) = self.mahi_state.lock() else {\n            return;\n        };\n        let Some(state) = state_guard.as_mut() else {\n            return;\n        };\n        match result {\n            MahiSigverifyResult::Verified { block_ref, .. } => {\n                state.mark_block_verified(block_ref);\n                self.notify_mahi_commit_executor();\n            }\n            MahiSigverifyResult::Failed { block_ref, .. } => state.mark_block_failed(block_ref),\n        }\n    }\n\n    pub(crate) fn enqueue_mahi_sigverify(\n        &self,\n        block_ref: MahiBlockRef,\n        block: &MahiBlock,\n    ) -> Result<(), String> {\n        if block.intents.is_empty() || self.mahi_sigverify_pool.is_none() {\n            let _dag = self.engine.dag_domain().track_lock();\n            let mut state_guard = self\n                .mahi_state\n                .lock()\n                .map_err(|_| \"mahi lock poisoned\".to_string())?;\n            let state = state_guard\n                .as_mut()\n                .ok_or_else(|| \"mahi disabled\".to_string())?;\n            state.mark_block_verified(block_ref);\n            self.notify_mahi_commit_executor();\n            return Ok(());\n        }\n\n        let head = self.engine.head_snapshot();\n        let batch = MahiSigverifyBatch {\n            block_ref,\n            intents: block.intents.clone(),\n            expected_chain_id: head.chain_id,\n            block_number: head.head_height.saturating_add(1),\n        };\n        self.mahi_sigverify_pool\n            .as_ref()\n            .expect(\"mahi sigverify pool should exist\")\n            .enqueue(batch)\n    }\n\n    pub(crate) fn ensure_mahi_missing_fetch_worker(&self) {\n        if !self.config.mahi_enabled || self.config.network_bootstrap.is_none() {\n            return;\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/rpc/src/server_network_process.rs",
+      "source_file_sha256": "9812dff1feed2e6283e5d185f7a46f8f9371103ae5e13d40e9c8fe1a7ed5bf64",
+      "label": "Network receipt enqueues verification after acceptance",
+      "source_start_line": 519,
+      "source_end_line": 528,
+      "code": "        let accept_started = Instant::now();\n        let reference = self.accept_mahi_block_into_state(block.clone(), false)?;\n        let accept_elapsed = accept_started.elapsed();\n        let sigverify_started = Instant::now();\n        self.enqueue_mahi_sigverify(reference, &block)\n            .map_err(|message| JsonRpcErrorObject {\n                code: -32000,\n                message,\n                data: None,\n            })?;\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/rpc/src/lib.rs",
+      "source_file_sha256": "d21df46e7998f83210296d182021702f8caf0ebf26f9cec534892955c6663989",
+      "label": "Duplicate accepted reference returns without clearing status",
+      "source_start_line": 677,
+      "source_end_line": 690,
+      "code": "        self.validate_block_restart_boundary(&block)?;\n        if let Some(existing) = self\n            .dag\n            .by_round\n            .get(&block.round)\n            .and_then(|entries| entries.get(&block.author))\n            .copied()\n        {\n            let reference = block.block_ref();\n            if existing == reference {\n                return Ok(existing);\n            }\n            if detects_equivocation(existing, reference) {\n                return Err(format!(\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/node/src/engine_block_flow.rs",
+      "source_file_sha256": "586ac5035cbf5520aae1190d986b841edd4e95ac73ac1a2bcac7160048a3ee54",
+      "label": "Metadata removes rejections and records their events",
+      "source_start_line": 249,
+      "source_end_line": 301,
+      "code": "        rejected_intents: Vec<RejectedIntent>,\n        committed_events: Vec<RuntimeEventKind>,\n        evm_transactions: Vec<EvmTransactionExecution>,\n    ) -> Result<&Block, NodeError> {\n        // RFC 046 \u2014 snapshot OI before any committed events apply state;\n        // diffed and emitted at end-of-block.\n        let pre_block_oi = self.market_open_interest_snapshot();\n        self.intent_mempool.remove_block(&block.body);\n        self.remove_pending_faucet_grants_in_block(&block.body);\n        self.remove_pending_delegation_actions_in_block(&block.body);\n        self.remove_pending_market_maker_program_actions_in_block(&block.body);\n        self.remove_pending_tee_governance_actions_in_block(&block.body);\n        self.remove_pending_real_capital_governance_actions_in_block(&block.body);\n        self.intent_mempool.remove_rejected(&rejected_intents);\n        self.refresh_proposer_frontier_for_block(&block.body);\n        self.refresh_proposer_frontier_for_rejected(&rejected_intents);\n        let produced_qc = synthetic_mahi_quorum_certificate(&block);\n        self.pacemaker.advance_on_qc(produced_qc);\n        let local_validator_id = self.local_validator_id();\n        self.telemetry.on_block_produced(\n            &block,\n            &self.pacemaker,\n            local_validator_id,\n            block.header.timestamp_ms,\n        );\n        self.telemetry.on_round_started(\n            &self.pacemaker,\n            local_validator_id,\n            block.header.timestamp_ms,\n        );\n        let previous_timestamp_ms = self.head().header.timestamp_ms;\n        self.chain.push(block);\n        self.note_committed_block(self.head().header.height);\n        let committed_head = self.head().clone();\n        self.index_evm_transaction_receipts(&committed_head, &evm_transactions);\n        let committed_head = self.head().clone();\n        self.apply_block_oracle_price_items(&committed_head);\n        let committed_head = self.head().clone();\n        self.apply_block_funding_items(&committed_head);\n        let committed_head = self.head().clone();\n        self.apply_block_faucet_items(&committed_head);\n        self.record_rejected_intents(\n            Some(self.head().header.height),\n            self.head().header.timestamp_ms,\n            &rejected_intents,\n        );\n        for event in committed_events {\n            self.record_runtime_event(\n                Some(self.head().header.height),\n                self.head().header.timestamp_ms,\n                event,\n            );\n        }\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/node/src/engine_block_flow.rs",
+      "source_file_sha256": "586ac5035cbf5520aae1190d986b841edd4e95ac73ac1a2bcac7160048a3ee54",
+      "label": "IntentRejected event emission",
+      "source_start_line": 2001,
+      "source_end_line": 2028,
+      "code": "    pub(super) fn record_rejected_intents(\n        &mut self,\n        block_height: Option<u64>,\n        timestamp_ms: u64,\n        rejected: &[RejectedIntent],\n    ) {\n        for rejected_intent in rejected {\n            self.record_mandate_admission_rejection(\n                block_height,\n                timestamp_ms,\n                block_height.unwrap_or_else(|| self.head().header.height.saturating_add(1)),\n                &rejected_intent.signed_intent,\n                rejected_intent.reason,\n            );\n            self.record_runtime_event(\n                block_height,\n                timestamp_ms,\n                RuntimeEventKind::IntentRejected {\n                    intent_id: intent_id(&rejected_intent.signed_intent),\n                    policy_id: rejected_intent.signed_intent.intent.policy_id,\n                    nonce: rejected_intent.signed_intent.intent.nonce,\n                    reason: rejected_intent.reason,\n                    order_reason: rejected_intent.order_reason,\n                },\n            );\n        }\n    }\n\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/node/src/engine_block_flow.rs",
+      "source_file_sha256": "586ac5035cbf5520aae1190d986b841edd4e95ac73ac1a2bcac7160048a3ee54",
+      "label": "Merged payload filter precedes execution",
+      "source_start_line": 1262,
+      "source_end_line": 1270,
+      "code": "        let (mut items, rejected_intents) = self.filter_mahi_intent_payload(\n            mahi_blocks.iter().flat_map(|block| block.intents.iter()),\n            &market_marks,\n            &market_index_prices,\n            &positions_after_funding,\n            block_number,\n            timestamp_ms,\n        );\n        for mahi_block in mahi_blocks {\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/node/src/engine_block_flow.rs",
+      "source_file_sha256": "586ac5035cbf5520aae1190d986b841edd4e95ac73ac1a2bcac7160048a3ee54",
+      "label": "Direct helper precedes four commit-stage overlays",
+      "source_start_line": 1355,
+      "source_end_line": 1380,
+      "code": "            if phase6_inplace_resting_commit_enabled()\n                && self.try_apply_mahi_resting_body_in_place(\n                    &parent,\n                    effective_round,\n                    timestamp_ms,\n                    proposer,\n                    body.clone(),\n                    &market_marks,\n                    &market_index_prices,\n                    &positions_after_funding,\n                    body_elapsed,\n                    total_started,\n                    profile_execution,\n                )?\n            {\n                return Ok(self.head());\n            }\n            let commit_started = Instant::now();\n            let mut policy_store = self.policy_store.clone();\n            let mut order_books = self.order_books.clone();\n            let mut resting_order_mandates = self.resting_order_mandates.clone();\n            let mut isolated_collateral = self.isolated_collateral.clone();\n            let commit_output = commit_block_intents_preverified_with_stats(\n                &mut policy_store,\n                &self.mandates,\n                &self.delegations,\n"
+    },
+    {
+      "source_revision": "37d360898ef8293bceeab569ae5eb6b8176116c1",
+      "path": "chain/crates/rpc/src/lib.rs",
+      "source_file_sha256": "5f47400077f6d348b34cf4fe1a3f6639787aa02f636d2b9a562e4fa32c604671",
+      "label": "April proxy already has fixed-count draining",
+      "source_start_line": 2773,
+      "source_end_line": 2810,
+      "code": "                            .pop_front()\n                            .expect(\"front block should exist\"),\n                    );\n                }\n                MahiBlockVerificationStatus::Pending | MahiBlockVerificationStatus::Failed => break,\n            }\n        }\n        ready\n    }\n\n    fn drain_ready_execution_for_batch(&mut self, execution_batch_size: usize) -> Vec<MahiBlock> {\n        let execution_batch_size = execution_batch_size.max(1);\n        if execution_batch_size == 1 {\n            return self.drain_ready_execution();\n        }\n\n        let mut verified = 0_usize;\n        for block in &self.pending_execution {\n            let status = self\n                .verification_status\n                .get(&block.block_ref())\n                .copied()\n                .unwrap_or(MahiBlockVerificationStatus::Pending);\n            if status != MahiBlockVerificationStatus::Verified {\n                break;\n            }\n            verified = verified.saturating_add(1);\n        }\n\n        let executable = verified - (verified % execution_batch_size);\n        let mut ready = Vec::with_capacity(executable);\n        for _ in 0..executable {\n            if let Some(block) = self.pending_execution.pop_front() {\n                ready.push(block);\n            }\n        }\n        ready\n    }\n"
+    },
+    {
+      "source_revision": "37d360898ef8293bceeab569ae5eb6b8176116c1",
+      "path": "chain/crates/node/src/lib.rs",
+      "source_file_sha256": "b41da06042a858d087e3593e82413d74eedfae74d8afab428c67c879d1ad0396",
+      "label": "April proxy already defaults the insertion flag on",
+      "source_start_line": 7038,
+      "source_end_line": 7045,
+      "code": "fn phase6_inplace_resting_commit_enabled() -> bool {\n    static ENABLED: OnceLock<bool> = OnceLock::new();\n    *ENABLED.get_or_init(|| {\n        std::env::var(PHASE6_INPLACE_RESTING_COMMIT_ENV)\n            .map(|value| value != \"0\" && !value.eq_ignore_ascii_case(\"false\"))\n            .unwrap_or(true)\n    })\n}\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/node/src/intent_pool.rs",
+      "source_file_sha256": "988380268f770bb0ce3d8c8c09cf8cdd98fff1f35f175d5dfba4ed9c5a0431c0",
+      "label": "Mempool removal uses body or rejected-list membership",
+      "source_start_line": 711,
+      "source_end_line": 736,
+      "code": "    pub fn remove_block(&mut self, body: &BlockBody) {\n        for item in &body.items {\n            if let BlockItem::Intent(signed_intent) = item {\n                let id = intent_id(signed_intent);\n                self.known_intents.remove(&id);\n                self.intents_by_order.remove(&IntentOrderKey {\n                    policy_id: signed_intent.intent.policy_id,\n                    nonce: signed_intent.intent.nonce,\n                    intent_id: id,\n                });\n            }\n        }\n    }\n\n    pub(super) fn remove_rejected(&mut self, rejected: &[RejectedIntent]) {\n        for rejected_intent in rejected {\n            let signed_intent = &rejected_intent.signed_intent;\n            let id = intent_id(signed_intent);\n            self.known_intents.remove(&id);\n            self.intents_by_order.remove(&IntentOrderKey {\n                policy_id: signed_intent.intent.policy_id,\n                nonce: signed_intent.intent.nonce,\n                intent_id: id,\n            });\n        }\n    }\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/state-db/src/backend/mod.rs",
+      "source_file_sha256": "c217cc053251232686cd801642199c8010d3f76eb36f5bddeb1ec1cee1eb16b7",
+      "label": "Commit metadata does not bind batch size",
+      "source_start_line": 382,
+      "source_end_line": 396,
+      "code": "pub struct CommitMeta {\n    /// On-disk schema version. Bumped on any incompatible change.\n    pub schema_version: u32,\n    /// Block height this commit advances to.\n    pub height: u64,\n    pub block_hash: Hash,\n    /// Root committed in the chain-head block header. Native Mahi may\n    /// advance this independently from executor state.\n    pub chain_head_state_root: Hash,\n    /// Root of executor/economic state after this commit.\n    pub executor_state_root: Hash,\n    /// Authoritative event seq cursor after this commit.\n    pub event_seq: u64,\n    pub timestamp_ms: u64,\n}\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/consensus/src/lib.rs",
+      "source_file_sha256": "4e839b3ac259066ff3ca7f94b74ee746333d8ecf25085569b3504f72ef0eb1b6",
+      "label": "Execution header does not bind batch size",
+      "source_start_line": 136,
+      "source_end_line": 148,
+      "code": "pub struct BlockHeader {\n    pub chain_id: u64,\n    pub height: u64,\n    pub round: u64,\n    pub proposer: ValidatorId,\n    pub parent_hash: Hash,\n    pub parent_state_root: Hash,\n    pub tx_root: Hash,\n    pub event_root: Hash,\n    pub state_root: Hash,\n    pub qc: QuorumCertificate,\n    pub timestamp_ms: u64,\n}\n"
+    },
+    {
+      "source_revision": "5dabe0284f1ef0bf6aede21a90ecf466685a2b3d",
+      "path": "chain/crates/rpc/src/server_mahi.rs",
+      "source_file_sha256": "5dea2ed7b80fe37aa942b6586483eb25863b2f1cd4ff968eb2a816e18664424b",
+      "label": "Missing-block fetch can enqueue accepted references for verification",
+      "source_start_line": 918,
+      "source_end_line": 951,
+      "code": "    pub(super) fn fetch_mahi_missing_block(&self, reference: MahiBlockRef) -> bool {\n        let Some(network_bootstrap) = self.config.network_bootstrap.as_ref() else {\n            return false;\n        };\n        let validators = network_bootstrap.validator_set.active_validators();\n        let Some(peer) = validators\n            .iter()\n            .find(|validator| validator.validator_id == reference.author)\n        else {\n            return false;\n        };\n        let request = NetworkMahiFetchRequest {\n            refs_hex: vec![encode_borsh_hex(&reference)],\n        };\n        let Ok(response) = self.send_network_json_request::<_, NetworkMahiFetchResponse>(\n            &peer.rpc_endpoints,\n            \"mahi/fetch\",\n            &request,\n        ) else {\n            return false;\n        };\n        let mut fetched_any = false;\n        for block_hex in response.blocks_hex {\n            let Ok(block) = decode_borsh_hex::<MahiBlock>(&block_hex) else {\n                continue;\n            };\n            let Ok(block_ref) = self.accept_mahi_block_into_state(block.clone(), false) else {\n                continue;\n            };\n            let _ = self.enqueue_mahi_sigverify(block_ref, &block);\n            fetched_any = true;\n        }\n        fetched_any\n    }\n"
+    }
+  ],
+  "april_proxy_provenance": {
+    "revision": "37d360898ef8293bceeab569ae5eb6b8176116c1",
+    "date": "2026-04-27T18:01:50+02:00",
+    "subject": "split chain into dedicated repo",
+    "parents": [],
+    "measured_binary_identity_established": false
+  },
+  "copy_scope": {
+    "stage_order": [
+      "Outer engine clone when durable backend is enabled",
+      "Payload filtering, including per-candidate full-store clones",
+      "Prechecked helper or general commit-stage overlays"
+    ],
+    "full_store_clones_in_filter": {
+      "structures": [
+        "PolicyStore: derived Clone over owned BTreeMap",
+        "resting_order_mandates: owned map"
+      ],
+      "initial_clones_per_structure": 1,
+      "additional_clones_per_simulated_candidate": 1,
+      "count": "m+1 per structure for m candidates that reach simulation",
+      "early_exclusions": "Burned-policy cascade rejection and nonce mismatch skip candidate simulation.",
+      "other_filter_copies": "Accumulated simulated order-book and isolated-collateral maps are cloned per simulated candidate."
+    },
+    "april_proxy": "Nonce-only filter, without the May per-candidate simulation copies.",
+    "runtime_cost_ranking": "Not measured. Clone counts do not rank their total cost against all four later overlays."
+  },
+  "failed_verification": {
+    "drain_behavior": "Both drains stop at the first block not marked Verified. A Failed block blocks its group and all later execution in that queue.",
+    "ordering": "The commit detector queues decided blocks without checking payload verification status.",
+    "failure_handler": "Sets Failed; no automatic retry or agreed skip rule.",
+    "duplicate_receipt": "Can enqueue a new job and overwrite status. Reverification cannot repair a deterministically invalid signature under fixed inputs.",
+    "reset": "Replaces the queue and starts a local segment, with the separate recovery-boundary gap.",
+    "replica_scope": "If the common decided block fails deterministically under common verification inputs, each replica halts at this boundary.",
+    "evidence": "Source analysis; no reproduced outage or new test.",
+    "duplicate_receipt_trace": [
+      "MahiState::accept_block returns Ok(existing) when the same author-round block reference arrives again.",
+      "process_decoded_network_mahi_block calls enqueue_mahi_sigverify after acceptance, including an existing reference.",
+      "enqueue_mahi_sigverify submits a job for nonempty intents when the pool exists.",
+      "apply_mahi_sigverify_result writes Verified or Failed for that reference.",
+      "fetch_mahi_missing_block also enqueues accepted fetched blocks. This is not an automatic failed-block retry loop."
+    ]
+  },
+  "batch_size_contract": {
+    "environment_variable": "KOMBAT_MAHI_MERGED_EXECUTION_BATCH",
+    "read_frequency": "Before each drain",
+    "absent_or_unparsable_default": {
+      "multiple_validators": 8,
+      "single_validator": 1
+    },
+    "parsed_zero": "Parser falls back to 8.",
+    "bound_in_header_or_durable_metadata": false,
+    "operator_obligation": "Use one common positive b and keep it fixed throughout the execution segment."
+  }
+}

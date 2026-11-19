@@ -1,0 +1,90 @@
+{
+  "id": 281,
+  "title": "RFC 044 EVM wallet action bridge implementation",
+  "date": "2026-05-04",
+  "status": "green_targeted",
+  "scope": [
+    "chain/crates/node/src/lib.rs",
+    "chain/crates/rpc/src/lib.rs",
+    "chain/sdk/ts"
+  ],
+  "history_ingested_before_core_changes": {
+    "all_experiment_files_reviewed": true,
+    "json_ranges": [
+      "chain/experiments/live/245-280",
+      "chain/experiments/local/266-267"
+    ],
+    "non_json_entries": [
+      "chain/experiments/live/252-six-ingress-topology.vars.yml",
+      "chain/experiments/live/260-packed-v4-on-v3-hosts.txt"
+    ],
+    "load_bearing_recent_entries": [
+      "277-rfc027-mm-live-handoff.json",
+      "279-mahi-local-test-hang-fixed.json",
+      "280-mahi-oracle-price-consensus-gap.json"
+    ]
+  },
+  "summary": {
+    "chain_node": [
+      "Refactored Ed25519 mandate/delegation submission into verified-action entry points so EVM verification can reuse the same state mutation and queue paths without duplicating semantics.",
+      "Exposed delegation_action_signer_account for RPC verification so EVM delegation signer derivation uses the same authoritative rules as SignedDelegationAction."
+    ],
+    "rpc": [
+      "Added kombat_submitEvmMandateAction with RFC 044 EIP-712 recovery, evm_owner_principal validation, valid_until_ms expiry, and existing mandate nonce/state semantics.",
+      "Added kombat_submitEvmDelegationAction for v1 principal-side RFC 026 actions: Deposit, RequestRedemption, and CancelRedemption.",
+      "EVM delegation verification recomputes canonical action_id from action, timestamp_ms, and mandatory submitter_nonce; rejects unsupported variants, signer mismatches, missing linked EVM authority, expired signatures, and chain mismatches.",
+      "Added /network/relay-evm-delegation-actions across Axum, raw HTTP, and peer transport so EVM delegation submissions gossip by default like kombat_submitSignedDelegationAction."
+    ],
+    "typescript_sdk": [
+      "Added browser-safe RFC 044 helpers for evmOwnerPrincipal, wallet principal matching, validUntil defaults/ceiling, v1 delegation signer derivation, Borsh action encoding, action-id derivation, EIP-712 typed data preparation, wallet signing, and submit RPC methods.",
+      "Added @noble/hashes for browser-safe keccak256 instead of relying on Node crypto."
+    ]
+  },
+  "validation": [
+    {
+      "command": "cargo check -p kombat-chain-rpc --manifest-path chain/Cargo.toml",
+      "result": "passed",
+      "notes": "Existing RFC042 durable helper dead-code warnings remain."
+    },
+    {
+      "command": "cargo test -p kombat-chain-rpc evm_ --manifest-path chain/Cargo.toml -- --nocapture",
+      "result": "passed",
+      "tests": "8/8"
+    },
+    {
+      "command": "npm test",
+      "workdir": "chain/sdk/ts",
+      "result": "passed",
+      "tests": "36/36"
+    }
+  ],
+  "do_not_repeat": [
+    {
+      "source": "277-rfc027-mm-live-handoff.json",
+      "lesson": "Do not ship browser or bot write paths that mutate only local validator state. This slice reuses existing mandate semantics and routes EVM delegation through the same pending queue, gossip relay, and status/wait path as signed delegation actions."
+    },
+    {
+      "source": "280-mahi-oracle-price-consensus-gap.json",
+      "lesson": "Do not let local-only inputs affect consensus-critical action execution. EVM delegation verification only admits into the existing delegation queue; committed execution remains the block-carrier path."
+    },
+    {
+      "source": "RFC 044 review",
+      "lesson": "Do not ask browser users to paste private keys. The TypeScript SDK prepares EIP-712 typed data and delegates signing to an EIP-1193 wallet."
+    },
+    {
+      "source": "RFC 026 delegation gossip hardening",
+      "lesson": "Do not add a second submission plane with weaker relay semantics. EVM delegation has a matching peer relay endpoint and peer_failures surface."
+    }
+  ],
+  "known_limits": [
+    "RFC 044 v1 supports EOA EIP-712 wallets only; ERC-1271 smart accounts remain v2.",
+    "EVM delegation v1 intentionally supports only Deposit, RequestRedemption, and CancelRedemption. Agent and keeper variants reject with wallet_write_not_supported.",
+    "RFC039 rate limiting is still required before public write surfaces are considered adversarial-production hardened.",
+    "Mandate EVM actions extend the existing mandate action path; this slice does not redesign mandate state into a new consensus block carrier."
+  ],
+  "next_review_focus": [
+    "Confirm RFC 044 EIP-712 field order/type strings match the document exactly.",
+    "Confirm TypeScript Borsh encoding for v1 delegation and mandate lifecycle actions matches Rust Borsh.",
+    "Confirm EVM delegation peer relay auth/failure semantics are acceptable as a mirror of signed delegation relay."
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "id": 267,
+  "name": "local-liveflag-switch-binned",
+  "status": "binned",
+  "date": "2026-04-27",
+  "scope": "local harness only",
+  "base_result": {
+    "decision_log_item": 266,
+    "artifact": "/tmp/codex-exp-local-liveflags-main-9f192eccf-100k-10s",
+    "measured_avg_instant_tps": 98453.88679647342,
+    "measured_peak_instant_tps": 114227.36613635269,
+    "classification": "local green with manually supplied live Mahi flags before the local target binary was overwritten/rebuilt"
+  },
+  "hypothesis": "A local harness switch could codify the manually supplied live Mahi flags so future agents do not repeat the no-live-flags local failure mode from item 266.",
+  "files": [
+    "chain/scripts/loadtest_local_cluster.sh",
+    "chain/experiments/local/267-local-liveflag-switch-binned.json",
+    "chain/THROUGHPUT_DECISION_LOG.md"
+  ],
+  "code_state": {
+    "start_head": "fb835953a",
+    "script_change": "reverted before commit",
+    "native_rebuild_binary_hashes": {
+      "kombat_chain_sha256": "9b394a791f944c9c65c05fe8f92a392b8fc225f8fb9d8b324c06a5a3a7607db1",
+      "kombat_loadgen_sha256": "ed7c7e2a379dd85f5a68b7c60f0f1f28e032cc64c9cfe3496078cadd31308318"
+    }
+  },
+  "attempts": [
+    {
+      "label": "switch-startup-failed-linux-elf",
+      "artifact": "/tmp/codex-exp-local-liveflag-switch-main-fb835953a-100k-10s",
+      "result": "startup failed",
+      "evidence": "chain/target/release/kombat_chain had been replaced by a Linux ELF binary and could not execute on macOS"
+    },
+    {
+      "label": "switch-with-ingress-peer-transport",
+      "artifact": "/tmp/codex-exp-local-liveflag-switch-main-fb835953a-100k-10s-rerun",
+      "target_rps": 100000,
+      "achieved_rps_measured": 31825.6,
+      "net_err": 225696,
+      "committed_summary_total": 5432,
+      "classification": "fail mode; enabling peer transport on observer ingress breaks localhost load delivery"
+    },
+    {
+      "label": "switch-validator-peer-transport-only",
+      "artifact": "/tmp/codex-exp-local-liveflag-switch-main-fb835953a-100k-10s-rerun2",
+      "target_rps": 100000,
+      "achieved_rps_measured": 99994.4,
+      "rpc_err": 0,
+      "net_err": 0,
+      "committed_summary_total": 393016,
+      "measured_avg_instant_tps": 5139.6,
+      "pending_relay_intents_after": 832696,
+      "classification": "fail mode; accepted load but owner relay did not drain enough to preserve item266 green throughput"
+    },
+    {
+      "label": "manual-liveflags-after-native-rebuild",
+      "artifact": "/tmp/codex-exp-local-manual-liveflags-main-fb835953a-100k-10s-rerun",
+      "target_rps": 100000,
+      "achieved_rps_measured": 100004.0,
+      "rpc_err": 0,
+      "net_err": 0,
+      "committed_summary_total": 343712,
+      "pending_relay_intents_after": 1151176,
+      "classification": "fail mode; exact manual env no longer reproduced item266 green after native rebuild/local host drift"
+    }
+  ],
+  "decision": {
+    "status": "binned",
+    "reason": "The harness switch did not reproduce the item266 green result and the exact manual command also degraded after the local target binary was rebuilt. Keeping this script change would encode an unstable local assumption.",
+    "next_move": "Do not continue tuning against this local instability. Keep item266 as the last local green artifact, keep item267 as the fail-mode record, and move recovery work back to codified live/topology experiments or add profiling before any further local >100k investigation."
+  }
+}

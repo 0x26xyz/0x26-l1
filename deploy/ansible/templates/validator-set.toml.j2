@@ -1,0 +1,18 @@
+epoch = {{ and_chain_chain_id }}
+
+{% for host in groups['kombat_live_testnet'] %}
+[[validators]]
+validator_id = "{{ hostvars[host].validator_id_hex }}"
+consensus_pubkey = "{{ hostvars[host].consensus_pubkey_hex }}"
+network_pubkey = "{{ hostvars[host].network_pubkey_hex }}"
+rpc_endpoints = ["{{ hostvars[host].public_rpc_url }}"]
+region = "{{ hostvars[host].region }}"
+operator_name = "{{ hostvars[host].operator_name }}"
+enabled = {{ (hostvars[host].validator_enabled | default(true) | bool) | ternary('true', 'false') }}
+
+[validators.bond]
+asset = "USDC"
+amount = 100
+status = "Active"
+
+{% endfor %}

@@ -1,0 +1,79 @@
+{
+  "id": 247,
+  "name": "no-v1-ingress-topology",
+  "status": "binned",
+  "date": "2026-04-26",
+  "base_results": [
+    {
+      "decision_log_item": 245,
+      "artifact": "/tmp/and-live-item219-topology-replay-100k-60s",
+      "committed_tps": 73618.0,
+      "measured_rps_total": 84691.5,
+      "finding": "validator-1 ingress underdelivered while validators 2-4 reached target"
+    },
+    {
+      "decision_log_item": 246,
+      "finding": "validator-1 writer overprovision did not restore p1 delivery"
+    }
+  ],
+  "purpose": "Recover a stable green live benchmark surface by excluding validator-1 as an ingress/loadgen source while keeping validator-1 in the four-validator consensus set and correctness checks.",
+  "harness_change": {
+    "file": "chain/scripts/loadtest_live_network_multi_ingress.sh",
+    "env": "LOADTEST_VALIDATOR_NAMES",
+    "description": "Optional space-separated validator names from hosts.txt to use as ingress/loadgen sources. Consensus/state checks still use the full hosts.txt via live_network_status and explicit state-root checks."
+  },
+  "environment": {
+    "loadgen_ingress_validators": [
+      "validator-2",
+      "validator-3",
+      "validator-4"
+    ],
+    "consensus_validators": [
+      "validator-1",
+      "validator-2",
+      "validator-3",
+      "validator-4"
+    ],
+    "ingress_ports": [
+      8645,
+      8646,
+      8647
+    ],
+    "endpoint_count": 9,
+    "writers_per_endpoint": 32,
+    "pipeline_depth": 1,
+    "batch_size": 8,
+    "target_rps_total": 100000,
+    "target_rps_per_endpoint": "11111 or 11112",
+    "deployed_binary_sha256": "dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd"
+  },
+  "planned_benchmark": {
+    "artifact": "/tmp/and-live-247-no-v1-ingress-100k-60s",
+    "command": "LOADTEST_OUTPUT_DIR=/tmp/and-live-247-no-v1-ingress-100k-60s LOADTEST_VALIDATOR_NAMES='validator-2 validator-3 validator-4' LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 100000 60"
+  },
+  "result": {
+    "artifact": "/tmp/and-live-247-no-v1-ingress-100k-60s",
+    "measured_rps_total": 71636.1,
+    "committed_total": 3963264,
+    "committed_tps": 66054.4,
+    "ok_total": 4696000,
+    "nonce_err_total": 0,
+    "rpc_err_total": 0,
+    "net_err_total": 0,
+    "common_height": 197,
+    "block_hash_hex": "0x01158d714778d9d7475460db12c1afb34621abc96a107910b0920e2a79b50e53",
+    "state_root_hex": "0xacbbefe77d0135d6c4b1984bbe2eaef8cc7d823ce1d0376abd4f7b13cae6084f",
+    "pre_admitted_pools_drained": true,
+    "decision": "Binned. Excluding validator-1 as ingress avoids the slow host but raises per-endpoint target to about 11.1k RPS, which validators 2-4 did not sustain under p1. Throughput fell below item 245."
+  },
+  "success_gate": {
+    "request_errors": 0,
+    "state_roots_match_across_all_four_validators": true,
+    "pre_admitted_pools_drained": true,
+    "committed_tps_green_floor": 85000
+  },
+  "notes": [
+    "This does not remove validator-1 from consensus; it only stops using validator-1 as a loadgen/ingress source.",
+    "If this recovers green TPS, the live benchmark topology should be treated as role-aware: validator-1 can remain validator-only while other hosts carry ingress."
+  ]
+}

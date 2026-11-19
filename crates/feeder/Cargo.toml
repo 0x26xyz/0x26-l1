@@ -1,0 +1,27 @@
+[package]
+name = "kombat-chain-feeder"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+publish = false
+
+[lib]
+name = "kombat_chain_feeder"
+path = "src/lib.rs"
+
+[[bin]]
+name = "kombat_feeder"
+path = "src/main.rs"
+
+[dependencies]
+hex = "0.4.3"
+futures-util = "0.3.31"
+reqwest = { version = "0.12.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.138"
+tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread", "sync", "time"] }
+tokio-tungstenite = { version = "0.26.1", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+toml = "0.8.19"
+
+[lints]
+workspace = true

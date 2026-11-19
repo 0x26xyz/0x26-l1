@@ -1,0 +1,77 @@
+- name: Deploy Kombat testnet oracle feeder bridge
+  hosts: "{{ and_chain_feeder_hosts | default('kombat_live_testnet') }}"
+  gather_facts: false
+  become: true
+  vars:
+    feeder_binary_path: "{{ lookup('env', 'KOMBAT_FEEDER_BINARY_PATH') | default(playbook_dir + '/../../../target-linux-x86_64/release/kombat_feeder', true) }}"
+    feeder_service_name: "{{ and_chain_feeder_service_name | default('kombat-feeder-live') }}"
+    feeder_config_file: "{{ and_chain_config_dir }}/kombat-feeder.toml"
+    feeder_id_hex: "0x0101010101010101010101010101010101010101010101010101010101010101"
+    feeder_stand_in_ids:
+      - "0x0101010101010101010101010101010101010101010101010101010101010101"
+      - "0x0202020202020202020202020202020202020202020202020202020202020202"
+      - "0x0303030303030303030303030303030303030303030303030303030303030303"
+    feeder_submit_interval_ms: "{{ and_chain_feeder_submit_interval_ms | default(10000) }}"
+  pre_tasks:
+    - name: Check local kombat_feeder binary
+      ansible.builtin.stat:
+        path: "{{ feeder_binary_path }}"
+      delegate_to: localhost
+      become: false
+      register: local_feeder_binary
+      run_once: true
+
+    - name: Require local kombat_feeder binary
+      ansible.builtin.assert:
+        that:
+          - local_feeder_binary.stat.exists
+          - local_feeder_binary.stat.executable
+        fail_msg: "Build the Linux kombat_feeder binary and set KOMBAT_FEEDER_BINARY_PATH."
+      run_once: true
+
+  tasks:
+    - name: Install kombat_feeder binary
+      ansible.builtin.copy:
+        src: "{{ feeder_binary_path }}"
+        dest: "{{ and_chain_install_root }}/bin/kombat_feeder"
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install feeder bridge config
+      ansible.builtin.template:
+        src: ../templates/kombat-feeder.toml.j2
+        dest: "{{ feeder_config_file }}"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Install feeder live service
+      ansible.builtin.template:
+        src: ../templates/kombat-feeder-live.service.j2
+        dest: "/etc/systemd/system/{{ feeder_service_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Stop legacy feeder tick timer if present
+      ansible.builtin.systemd_service:
+        name: kombat-feeder-tick.timer
+        daemon_reload: true
+        enabled: false
+        state: stopped
+      failed_when: false
+
+    - name: Stop legacy feeder tick service if present
+      ansible.builtin.systemd_service:
+        name: kombat-feeder-tick.service
+        enabled: false
+        state: stopped
+      failed_when: false
+
+    - name: Enable feeder live service
+      ansible.builtin.systemd_service:
+        name: "{{ feeder_service_name }}.service"
+        daemon_reload: true
+        enabled: true
+        state: restarted

@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Kombat testnet feeder bridge tick every {{ feeder_tick_interval_secs }} seconds
+
+[Timer]
+OnBootSec=5s
+OnUnitActiveSec={{ feeder_tick_interval_secs }}s
+AccuracySec=1s
+Unit={{ feeder_service_name }}.service
+
+[Install]
+WantedBy=timers.target

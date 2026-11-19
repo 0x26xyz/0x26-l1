@@ -1,0 +1,45 @@
+{
+  "id": 250,
+  "name": "environment-snapshot",
+  "status": "kept",
+  "date": "2026-04-26",
+  "base_results": [
+    {
+      "decision_log_item": 219,
+      "committed_tps": 85382.0,
+      "finding": "known green live reference"
+    },
+    {
+      "decision_log_item": 249,
+      "committed_tps": 30750.7,
+      "finding": "known-good binary plus corrected ports did not reproduce under current environment"
+    }
+  ],
+  "purpose": "Capture a committed, replayable live environment snapshot before any more throughput recovery attempts. This prevents further untracked drift across binary, service env, systemd limits, process topology, sockets, CPU/memory state, and RPC metrics.",
+  "files": [
+    "chain/deploy/ansible/playbooks/capture_env.yml"
+  ],
+  "planned_capture": {
+    "artifact_dir": "/tmp/and-live-env-snapshot-250-current-dd022982",
+    "command": "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) KOMBAT_BINARY_PATH=/tmp/kombat_chain-live-dd022982 KOMBAT_SNAPSHOT_DIR=/tmp/and-live-env-snapshot-250-current-dd022982 .venv/bin/ansible-playbook playbooks/capture_env.yml"
+  },
+  "result": {
+    "artifact_dir": "/tmp/and-live-env-snapshot-250-current-dd022982",
+    "captured_after_clean_wipe": true,
+    "deployed_binary_sha256": "dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd",
+    "archives": {
+      "validator-1.tgz": "32bd29f41750e99a3aea0dabcf1bc743b239c540f54949a9aaa4abc8931f5621",
+      "validator-2.tgz": "048a59568dae7f3ca52d5b2a7d59bd3ea842bc255045e662facb8a2b67498755",
+      "validator-3.tgz": "4e29d0e361b23ce37612a59004fea54a9cf726cdac446cc62e34b25856410829",
+      "validator-4.tgz": "8f56b4123bdf0b93fed78ca0d3610501fd92a3ac164838a0f30f944a996d9e10"
+    },
+    "ansible_facts_present": true,
+    "operator_token_redacted_or_absent": true,
+    "decision": "Kept diagnostic. Future live benchmarks must reference this snapshot or a newer committed snapshot before comparing TPS."
+  },
+  "expected_binary_sha256": "dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd",
+  "notes": [
+    "The snapshot redacts KOMBAT_OPERATOR_TOKEN from env files and process environments.",
+    "This item is a reproducibility gate, not a TPS run. The next benchmark should reference this snapshot or a later snapshot explicitly."
+  ]
+}

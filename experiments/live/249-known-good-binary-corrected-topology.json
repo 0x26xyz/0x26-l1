@@ -1,0 +1,95 @@
+{
+  "id": 249,
+  "name": "known-good-binary-corrected-topology",
+  "status": "binned",
+  "date": "2026-04-26",
+  "base_results": [
+    {
+      "decision_log_item": 219,
+      "commit": "808f5b29a",
+      "artifact": "/tmp/and-live-distributed-ingress3-100k-soak60-reverted-32w-p1-20260426-114012",
+      "committed_tps": 85382.0,
+      "binary_sha256": "unknown in artifact; rebuilt rollback binary is ea1cb5d1809320d6f35f4a56f172af51bf5e8d7d9447bdbd32275fd0604e5cf5"
+    },
+    {
+      "decision_log_item": 244,
+      "artifact": "/tmp/and-live-808f5b29a-12ingress-100k-60s",
+      "finding": "808f5b29a rollback did not reproduce, but this was before the ingress-port topology drift was fixed"
+    },
+    {
+      "decision_log_item": 245,
+      "artifact": "/tmp/and-live-item219-topology-replay-100k-60s",
+      "committed_tps": 73618.0,
+      "finding": "corrected ports restored correctness with dd022982 binary, but delivered load was below item 219"
+    },
+    {
+      "decision_log_item": 248,
+      "artifact": "/tmp/and-live-248-p2-fail-on-error-100k-60s",
+      "committed_tps": 55687.7,
+      "finding": "pipeline-depth 2 is not a green recovery path"
+    }
+  ],
+  "purpose": "Run the missing clean A/B: redeploy the item-219 known-good 808f5b29a binary while keeping the corrected 8645/8646/8647 ingress topology, then replay the 12-endpoint p1 100k/60s benchmark.",
+  "environment": {
+    "consensus_validators": [
+      "validator-1",
+      "validator-2",
+      "validator-3",
+      "validator-4"
+    ],
+    "ingress_ports": [
+      8645,
+      8646,
+      8647
+    ],
+    "endpoint_count": 12,
+    "writers_per_endpoint": 32,
+    "pipeline_depth": 1,
+    "strict_nonce_retry": true,
+    "fail_on_errors": true,
+    "batch_size": 8,
+    "target_rps_total": 100000,
+    "target_rps_per_endpoint": "8333 or 8334",
+    "rollback_binary_path": "/tmp/kombat_chain-808f5b29a",
+    "rollback_binary_sha256": "ea1cb5d1809320d6f35f4a56f172af51bf5e8d7d9447bdbd32275fd0604e5cf5"
+  },
+  "planned_deploy": {
+    "command": "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) KOMBAT_BINARY_PATH=/tmp/kombat_chain-808f5b29a .venv/bin/ansible-playbook playbooks/deploy.yml"
+  },
+  "planned_benchmark": {
+    "artifact": "/tmp/and-live-249-808f5b29a-corrected-topology-100k-60s",
+    "command": "LOADTEST_OUTPUT_DIR=/tmp/and-live-249-808f5b29a-corrected-topology-100k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=1 LOADTEST_FAIL_ON_ERRORS=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 100000 60"
+  },
+  "result": {
+    "artifact": "/tmp/and-live-249-808f5b29a-corrected-topology-100k-60s",
+    "deployed_binary_sha256": "ea1cb5d1809320d6f35f4a56f172af51bf5e8d7d9447bdbd32275fd0604e5cf5",
+    "measured_rps_total": 81147.8,
+    "committed_total_after_normal_drain": 1845044,
+    "committed_tps_after_normal_drain": 30750.7,
+    "ok_total": 5250744,
+    "nonce_err_total": 0,
+    "rpc_err_total": 0,
+    "net_err_total": 0,
+    "common_height_after_extra_drain": 623,
+    "block_hash_hex_after_extra_drain": "0xc0643d78b35921fe340f746cd46811a09354ce2ae614b60a61b93342e756fdd6",
+    "state_root_hex_after_extra_drain": "0xd0e5907304376970e7cfc5177b70fe17efa23f6b5e40c0e2210e3a1734566e58",
+    "pre_admitted_pools_drained_after_extra_120s": false,
+    "remaining_pre_admitted_pool_items_after_extra_120s": {
+      "validator-1": 461096,
+      "validator-2": 412351,
+      "validator-3": 0,
+      "validator-4": 97128
+    },
+    "decision": "Binned. The 808f5b29a rollback binary plus corrected ports did not reproduce item 219. Delivery was 81.1k RPS but the runtime left large Mahi pre-admitted backlogs after normal and extra drain windows."
+  },
+  "success_gate": {
+    "request_errors": 0,
+    "state_roots_match_across_all_four_validators": true,
+    "pre_admitted_pools_drained": true,
+    "committed_tps_green_floor": 85382.0
+  },
+  "interpretation": [
+    "If this reproduces item 219, the current deployed binary/code line is the regression source.",
+    "If this does not reproduce item 219, the remaining delta is host/runtime/loadgen environment rather than protocol code, because the corrected port topology and known-good binary are both restored."
+  ]
+}

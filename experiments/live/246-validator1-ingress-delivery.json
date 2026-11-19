@@ -1,0 +1,111 @@
+{
+  "id": 246,
+  "name": "validator1-ingress-delivery",
+  "status": "binned_v1_writer_overprovision",
+  "date": "2026-04-26",
+  "base_result": {
+    "decision_log_item": 245,
+    "artifact": "/tmp/and-live-item219-topology-replay-100k-60s",
+    "committed_tps": 73618.0,
+    "measured_rps_total": 84691.5,
+    "diagnosis": "validator-1 ingress endpoints delivered only 3116.5-3263.1 RPS each while other endpoints reached target."
+  },
+  "purpose": "Pin down whether validator-1 local ingress underdelivery is a host/service latency problem under the item-219 safe topology before changing protocol code.",
+  "environment": {
+    "validator": "validator-1",
+    "validator_host": "203.0.113.15",
+    "target_ports": [
+      8645,
+      8646,
+      8647
+    ],
+    "state_url": "http://127.0.0.1:8545",
+    "deployed_binary_sha256": "dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd",
+    "experiment_base_tag": "chain-exp-245-item219-topology-replay-result"
+  },
+  "planned_tests": [
+    {
+      "name": "v1-p8645-safe-p1",
+      "artifact": "/tmp/and-live-246-v1-p8645-p1-8333-30s",
+      "command": "LOADTEST_WRITERS_JSON=/tmp/and-live-item219-topology-replay-100k-60s/writer-shards/validator-1-p8645.json LOADTEST_OUTPUT_DIR=/tmp/and-live-246-v1-p8645-p1-8333-30s LOADTEST_TARGET_URL=http://127.0.0.1:8645 LOADTEST_STATE_URL=http://127.0.0.1:8545 LOADTEST_DRAIN_SECS=15 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=1 bash chain/scripts/loadtest_live_network_from_validator.sh /tmp/and-live-testnet validator-1 32 8333 30"
+    },
+    {
+      "name": "v1-p8646-safe-p1",
+      "artifact": "/tmp/and-live-246-v1-p8646-p1-8333-30s",
+      "command": "LOADTEST_WRITERS_JSON=/tmp/and-live-item219-topology-replay-100k-60s/writer-shards/validator-1-p8646.json LOADTEST_OUTPUT_DIR=/tmp/and-live-246-v1-p8646-p1-8333-30s LOADTEST_TARGET_URL=http://127.0.0.1:8646 LOADTEST_STATE_URL=http://127.0.0.1:8545 LOADTEST_DRAIN_SECS=15 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=1 bash chain/scripts/loadtest_live_network_from_validator.sh /tmp/and-live-testnet validator-1 32 8333 30"
+    },
+    {
+      "name": "v1-p8647-safe-p1",
+      "artifact": "/tmp/and-live-246-v1-p8647-p1-8333-30s",
+      "command": "LOADTEST_WRITERS_JSON=/tmp/and-live-item219-topology-replay-100k-60s/writer-shards/validator-1-p8647.json LOADTEST_OUTPUT_DIR=/tmp/and-live-246-v1-p8647-p1-8333-30s LOADTEST_TARGET_URL=http://127.0.0.1:8647 LOADTEST_STATE_URL=http://127.0.0.1:8545 LOADTEST_DRAIN_SECS=15 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=1 bash chain/scripts/loadtest_live_network_from_validator.sh /tmp/and-live-testnet validator-1 32 8333 30"
+    },
+    {
+      "name": "v1-p8646-safe-p1-64w",
+      "artifact": "/tmp/and-live-246-v1-p8646-p1-64w-8333-30s",
+      "command": "jq '.[0:64]' /tmp/and-live-item219-topology-replay-100k-60s/writers-all.json > /tmp/and-live-246-v1-64w.json && LOADTEST_WRITERS_JSON=/tmp/and-live-246-v1-64w.json LOADTEST_OUTPUT_DIR=/tmp/and-live-246-v1-p8646-p1-64w-8333-30s LOADTEST_TARGET_URL=http://127.0.0.1:8646 LOADTEST_STATE_URL=http://127.0.0.1:8545 LOADTEST_DRAIN_SECS=15 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=1 bash chain/scripts/loadtest_live_network_from_validator.sh /tmp/and-live-testnet validator-1 64 8333 30"
+    }
+  ],
+  "success_gate": {
+    "request_errors": 0,
+    "per_port_measured_rps_target": 8000,
+    "pre_admitted_pool_does_not_stick": true,
+    "state_roots_match_after_probe": true
+  },
+  "result": {
+    "summary": "Validator-1 ingress underdelivery is real under the safe p1 topology. Increasing independent writers from 32 to 64 did not restore target delivery.",
+    "tests": [
+      {
+        "name": "v1-p8645-safe-p1",
+        "artifact": "/tmp/and-live-246-v1-p8645-p1-8333-30s",
+        "writers": 32,
+        "pipeline_depth": 1,
+        "target_rps": 8333,
+        "measured_rps": 6798.1,
+        "committed": 243328,
+        "request_errors": 0
+      },
+      {
+        "name": "v1-p8646-safe-p1",
+        "artifact": "/tmp/and-live-246-v1-p8646-p1-8333-30s",
+        "writers": 32,
+        "pipeline_depth": 1,
+        "target_rps": 8333,
+        "measured_rps": 4019.2,
+        "committed": 136000,
+        "request_errors": 0
+      },
+      {
+        "name": "v1-p8647-safe-p1",
+        "artifact": "/tmp/and-live-246-v1-p8647-p1-8333-30s",
+        "writers": 32,
+        "pipeline_depth": 1,
+        "target_rps": 8333,
+        "measured_rps": 4202.1,
+        "committed": 153000,
+        "request_errors": 0
+      },
+      {
+        "name": "v1-p8646-safe-p1-64w",
+        "artifact": "/tmp/and-live-246-v1-p8646-p1-64w-8333-30s",
+        "writers": 64,
+        "pipeline_depth": 1,
+        "target_rps": 8333,
+        "measured_rps": 3920.0,
+        "committed": 152288,
+        "request_errors": 0
+      }
+    ],
+    "correctness": {
+      "common_height": 973,
+      "block_hash_hex": "0x4c88ec64b12b4eec3905ca1cedd94bacb122de0bddc8a8e2f2b5d301f72587af",
+      "state_root_hex": "0x27692afde1b3dacc58b95afcb6282cecfd76af0b3fba7542b327498dbee4667e",
+      "pre_admitted_pools_drained": true
+    },
+    "decision": "Do not pursue writer overprovisioning on validator-1 as the recovery path. The next path is a codified live topology that avoids validator-1 ingress while still verifying four-validator state convergence."
+  },
+  "notes": [
+    "This is a live delivery diagnostic, not a protocol optimization.",
+    "If 32 writer safe p1 cannot reach target on validator-1 but 64 writer safe p1 does, the full-run fix should be a codified writer-overprovisioned live benchmark topology, not pipeline depth.",
+    "If 64 writer safe p1 still cannot reach target, the next action is host/service remediation or an explicitly tagged fail-on-error pipeline canary, not consensus code churn."
+  ]
+}

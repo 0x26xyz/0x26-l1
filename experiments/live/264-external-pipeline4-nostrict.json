@@ -1,0 +1,89 @@
+{
+  "id": 264,
+  "name": "external-loadgen-pipeline4-no-strict-nonce",
+  "status": "kept diagnostic; not green",
+  "date": "2026-04-27",
+  "base_results": [
+    {
+      "decision_log_item": 263,
+      "committed_tps": 34521.3,
+      "artifact": "/tmp/and-live-263c-clean-reset-external-loadgen-100k-60s",
+      "finding": "external loadgen at pipeline depth 1 only drove ~40k RPS; validators were idle"
+    }
+  ],
+  "hypothesis": "Item 263c proved the external loadgen path is correct but PIPELINE_DEPTH=1 latency-caps delivered RPS at ~40k. Raising PIPELINE_DEPTH to 4 with LOADTEST_STRICT_NONCE_RETRY=0 should increase effective concurrency and drive enough offered load to approach the item251 green reference.",
+  "files": [
+    "chain/scripts/loadtest_live_network_from_validator.sh",
+    "chain/scripts/loadtest_live_network_multi_ingress.sh",
+    "chain/scripts/capture_remote_loadgen_profile.sh",
+    "chain/experiments/live/264-external-pipeline4-nostrict.json",
+    "chain/THROUGHPUT_DECISION_LOG.md"
+  ],
+  "git_environment_anchors": {
+    "plan_tag": "chain-exp-264-external-pipeline4-plan",
+    "result_tag": "chain-exp-264-external-pipeline4-result",
+    "validator_binary_sha256": "dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd",
+    "loadgen_binary_sha256": "e5a6927cbf30e1abb0c580b1461fe198498e14b310c67af9ea7757211fcb01ef",
+    "inventory": "chain/deploy/ansible/inventory/testnet.yml"
+  },
+  "topology": {
+    "validator-1": { "physical_host": "203.0.113.15" },
+    "validator-2": { "physical_host": "203.0.113.17" },
+    "validator-3": { "physical_host": "203.0.113.14" },
+    "validator-4": { "physical_host": "203.0.113.16" },
+    "external_loadgen": {
+      "ssh_host": "root@203.0.113.10",
+      "role": "dedicated loadgen runner for all 12 validator ingress endpoints"
+    }
+  },
+  "attempts": {
+    "264a_setup_failure": "PIPELINE_DEPTH=4 with LOADTEST_STRICT_NONCE_RETRY=1 (default). Loadgen rejects --strict-nonce-retry with --pipeline-depth > 1. Fixed by setting LOADTEST_STRICT_NONCE_RETRY=0.",
+    "264b_valid": "PIPELINE_DEPTH=4, LOADTEST_STRICT_NONCE_RETRY=0, otherwise same topology and binary as 263c."
+  },
+  "commands": [
+    "LOADTEST_EXTERNAL_RUNNER_SSH=root@203.0.113.10 LOADTEST_WRITERS_JSON=/tmp/and-live-261-rebuilt-v4-default-100k-60s/writers-all.json LOADTEST_OUTPUT_DIR=/tmp/and-live-264b-external-pipeline4-nostrict-100k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=4 LOADTEST_STRICT_NONCE_RETRY=0 LOADTEST_FAIL_ON_ERRORS=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 100000 60",
+    "bash chain/scripts/live_network_status.sh /tmp/and-live-testnet",
+    "curl kombat_getConsensusMetrics and kombat_getStateRootAtHeight on all four validators"
+  ],
+  "result": {
+    "artifact": "/tmp/and-live-264b-external-pipeline4-nostrict-100k-60s",
+    "duration_secs": 60,
+    "committed_total": 3067080,
+    "committed_tps": 51118.0,
+    "ok_total": 3067080,
+    "measured_rps_total": 46906.9,
+    "rpc_err_total": 0,
+    "nonce_err_total": 0,
+    "net_err_total": 0,
+    "common_height_state_root": {
+      "height": 93,
+      "state_root_hex": "0xc73e596241a8091cdf5f3c12cb81de83944cb6a35d75a2b5dc63250c9460ec05",
+      "matched_all_validators": true
+    },
+    "profile_hashes": {
+      "aggregate_summary": "cf03a1ac0cba791ebbc50b0ea6aa4343da8f54bbc3dfd269c0e09b4b42f113b9",
+      "writers_all": "9c7f09dcca5d59c20dfbc4602931f4f875788632bc69464dbba86d149e4fbe2a",
+      "validator_profiles": {
+        "v1": "0cecbd2d5b450a802c1db9b93a5419d5eab42fe09637eb5b2935722e36004db0",
+        "v2": "15fd05aab043b4962dd4cb2ce27e4048dd11d2f4a4642dad5176a5a3b0807833",
+        "v3": "7ee5e934e318f42c8248936480a664d23dface63ce2a5c9cc2e20745fa5f9c49",
+        "v4": "6310f6f9fccc574c7b0a17e0675ecb21157fd25494c6e8ab61aa111d8b751091"
+      },
+      "loadgen_profile": "383b0709b4857addf67427a4ffbf46a90aa4d797c93e8e6aee0551033aeca454"
+    },
+    "classification": "Pipeline depth 4 roughly doubles effective external concurrency and materially improves TPS, but measured driver RPS is only 46,906.9 — the external loadgen host still cannot deliver the full 100k offered. The validators are still under-driven."
+  },
+  "success_criteria": {
+    "committed_tps_green_floor": 76000,
+    "zero_rpc_errors": true,
+    "zero_nonce_errors": true,
+    "zero_network_errors": true,
+    "common_height_state_roots_match": true,
+    "external_loadgen_delivers_100k_offered": false
+  },
+  "decision": {
+    "status": "kept diagnostic; not green",
+    "reason": "Pipeline depth 4 improves TPS from 34,521 to 51,118, proving external concurrency is the current bottleneck. But even depth 4 only drives ~47k measured RPS on one external host. The loadgen host is either CPU-bound or SSH-session-bound across 12 concurrent loadgen processes. The validators are still under-driven and would commit more if load actually arrived.",
+    "next_move": "Increase external loadgen capacity: raise PIPELINE_DEPTH further, increase writers per endpoint, split load across multiple external loadgen hosts, or run multiple loadgen processes per endpoint on the external host. The validator binary/config remains unchanged — this is purely a load-generation capacity problem now."
+  }
+}

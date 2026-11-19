@@ -1,0 +1,203 @@
+{
+  "id": 262,
+  "name": "during-load-host-profile",
+  "status": "kept diagnostic; not green",
+  "date": "2026-04-27",
+  "base_results": [
+    {
+      "decision_log_item": 251,
+      "committed_tps": 77666.8,
+      "artifact": "/tmp/and-live-251-v1-nginx-stopped-100k-60s",
+      "finding": "green exact-binary reference"
+    },
+    {
+      "decision_log_item": 261,
+      "committed_tps": 54762.3,
+      "artifact": "/tmp/and-live-261-rebuilt-v4-default-100k-60s",
+      "finding": "rebuilt validator-4 is correct but v1/v4 ingress delivery remains weak"
+    }
+  ],
+  "hypothesis": "The item261 delivery skew is caused by host/runtime behavior visible only under load. A during-load profile of the exact item251 binary/config will distinguish CPU saturation, softirq/NIC pressure, socket pressure, and application per-request cost on weak hosts validator-1/validator-4 versus healthy hosts validator-2/validator-3.",
+  "files": [
+    "chain/deploy/ansible/playbooks/capture_load_profile.yml",
+    "chain/experiments/live/262-during-load-host-profile.json",
+    "chain/THROUGHPUT_DECISION_LOG.md"
+  ],
+  "git_environment_anchors": {
+    "plan_tag": "chain-exp-262-during-load-host-profile-plan",
+    "profile_fix_tag": "chain-exp-262-during-load-host-profile-profile-fix",
+    "result_tag": "chain-exp-262-during-load-host-profile-result",
+    "replay_binary": "/tmp/kombat_chain-live-dd022982",
+    "replay_binary_sha256": "dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd",
+    "inventory": "chain/deploy/ansible/inventory/testnet.yml"
+  },
+  "profile_capture": {
+    "playbook": "chain/deploy/ansible/playbooks/capture_load_profile.yml",
+    "local_profile_dir": "/tmp/and-live-262-profile-100k-60s",
+    "profile_secs": 105,
+    "profile_interval_secs": 2,
+    "samples": [
+      "process CPU for kombat_chain validator and ingress processes",
+      "top kombat_chain thread CPU and CPU core placement",
+      "systemd CPUUsageNSec deltas",
+      "softirq counters",
+      "NIC byte/packet/drop counters",
+      "socket summaries and chain port connections",
+      "vmstat/mpstat/loadavg under load"
+    ]
+  },
+  "commands": [
+    "cd chain/deploy/ansible && KOMBAT_PROFILE_DIR=/tmp/and-live-262-profile-100k-60s KOMBAT_PROFILE_SECS=105 KOMBAT_PROFILE_INTERVAL_SECS=2 KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible-playbook -i inventory/testnet.yml playbooks/capture_load_profile.yml",
+    "LOADTEST_WRITERS_JSON=/tmp/and-live-261-rebuilt-v4-default-100k-60s/writers-all.json LOADTEST_OUTPUT_DIR=/tmp/and-live-262-during-load-profile-100k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=1 LOADTEST_FAIL_ON_ERRORS=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 100000 60",
+    "cd chain/deploy/ansible && KOMBAT_PROFILE_DIR=/tmp/and-live-262-profile2-100k-60s KOMBAT_PROFILE_SECS=105 KOMBAT_PROFILE_INTERVAL_SECS=2 KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible-playbook -i inventory/testnet.yml playbooks/capture_load_profile.yml",
+    "LOADTEST_WRITERS_JSON=/tmp/and-live-261-rebuilt-v4-default-100k-60s/writers-all.json LOADTEST_OUTPUT_DIR=/tmp/and-live-262b-during-load-profile-100k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=1 LOADTEST_FAIL_ON_ERRORS=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 100000 60",
+    "bash chain/scripts/live_network_status.sh /tmp/and-live-testnet",
+    "curl kombat_getConsensusMetrics on all four validator RPC endpoints",
+    "curl kombat_getStateRootAtHeight at the common height on all four validator RPC endpoints"
+  ],
+  "execution_notes": [
+    "The first profile run completed at 63,282.4 TPS and captured validator/ingress kombat_chain processes plus host/network counters, but missed remote kombat_loadgen processes. The playbook was fixed and tagged before rerunning.",
+    "The second profile run is the decision artifact because it includes kombat_loadgen processes, top processes, and loadgen threads."
+  ],
+  "result": {
+    "artifact": "/tmp/and-live-262b-during-load-profile-100k-60s",
+    "profile_artifact": "/tmp/and-live-262-profile2-100k-60s",
+    "profile_archive_sha256": {
+      "validator-1": "f3a586d4d254e3be0c6662184946c82f6e949fe80fd211da9de5b3bdcd54cf7c",
+      "validator-2": "94d2329435e7f4a543424fe8d03edbdfe13f034a367f13341bbba3bf54998f0a",
+      "validator-3": "748e21588909fb18e7acfcd7f4bce000ce65fd0cda106413d5560a952ef2fad5",
+      "validator-4": "5d2849e1765345b580a74a0279f83a8e221d319066389f75048b044c4b0dd9de"
+    },
+    "duration_secs": 60,
+    "committed_total": 3829385,
+    "committed_tps": 63823.1,
+    "ok_total": 3895816,
+    "accepted_rps": 64930.3,
+    "measured_rps_total": 58294.6,
+    "rpc_err_total": 0,
+    "nonce_err_total": 0,
+    "net_err_total": 0,
+    "endpoint_rps": {
+      "validator-1": [2626.9, 2637.3, 2636.5],
+      "validator-2": [6220.9, 6131.3, 6186.4],
+      "validator-3": [6519.6, 6474.4, 6437.1],
+      "validator-4": [4153.9, 4163.1, 4107.2]
+    },
+    "loadgen_latency_ms": {
+      "validator-1": {
+        "p50": [64.786, 65.634, 66.043],
+        "p90": [204.435, 207.94, 203.726],
+        "p99": [584.239, 573.001, 559.174]
+      },
+      "validator-2": {
+        "p50": [31.859, 32.088, 32.429],
+        "p90": [77.509, 80.895, 77.611],
+        "p99": [180.807, 170.069, 174.661]
+      },
+      "validator-3": {
+        "p50": [25.878, 25.967, 26.389],
+        "p90": [67.117, 69.87, 69.304],
+        "p99": [202.595, 205.517, 204.032]
+      },
+      "validator-4": {
+        "p50": [36.125, 37.355, 38.692],
+        "p90": [136.444, 132.78, 136.928],
+        "p99": [352.809, 351.446, 349.961]
+      }
+    },
+    "common_height_state_root": {
+      "height": 330,
+      "block_hash_hex": "0x5c63f46862d45f8c8f08f68e97144feec9130c066e809e3a0374ad676a928553",
+      "state_root_hex": "0xc7ac03117f198cbd5ce1c4844e4a8a4139bfdf70ce3fadd81f11394e13671efb",
+      "matched_all_validators": true
+    },
+    "mahi_metrics": {
+      "commit_log_hash_hex": "0xd086159626f0ef42569a6da478aafb25ce9c04fdaa0d0636ef3856eebdb24e40",
+      "committed_block_count": 2637,
+      "executed_intent_count": 11395568,
+      "all_validators_match": true,
+      "sigverify_p50_p90_max_ms": {
+        "validator-1": [223, 446, 1394],
+        "validator-2": [180, 346, 535],
+        "validator-3": [185, 348, 593],
+        "validator-4": [189, 323, 873]
+      },
+      "inbound_accept_p90_max_ms": {
+        "validator-1": [41, 147],
+        "validator-2": [9, 56],
+        "validator-3": [19, 50],
+        "validator-4": [17, 61]
+      },
+      "commit_execution_batch_p50_p90_max_ms": {
+        "validator-1": [223, 396, 814],
+        "validator-2": [217, 283, 409],
+        "validator-3": [217, 326, 383],
+        "validator-4": [172, 241, 494]
+      }
+    },
+    "post_drain_pre_admitted_pool_items": {
+      "validator-1": 0,
+      "validator-2": 1184,
+      "validator-3": 0,
+      "validator-4": 0
+    },
+    "profile_summary": {
+      "eth0_rx_drop_delta": {
+        "validator-1": 0,
+        "validator-2": 0,
+        "validator-3": 0,
+        "validator-4": 0
+      },
+      "eth0_tx_drop_delta": {
+        "validator-1": 0,
+        "validator-2": 0,
+        "validator-3": 0,
+        "validator-4": 0
+      },
+      "kombat_chain_cpu_sum_p50": {
+        "validator-1": 73.7,
+        "validator-2": 59.6,
+        "validator-3": 58.85,
+        "validator-4": 71.2
+      },
+      "kombat_loadgen_cpu_sum_p50": {
+        "validator-1": 247.45,
+        "validator-2": 321.6,
+        "validator-3": 324.0,
+        "validator-4": 307.9
+      },
+      "top_loadgen_thread_cpu_p50": {
+        "validator-1": 83.3,
+        "validator-2": 109.0,
+        "validator-3": 110.5,
+        "validator-4": 106.0
+      },
+      "load1_p50": {
+        "validator-1": 39.2,
+        "validator-2": 35.53,
+        "validator-3": 38.305,
+        "validator-4": 36.69
+      },
+      "net_rx_softirq_delta_total": {
+        "validator-1": 487199,
+        "validator-2": 1042793,
+        "validator-3": 1106212,
+        "validator-4": 735044
+      }
+    },
+    "classification": "The corrected profile does not show NIC drops or loadgen saturation on weak hosts. Validator-1 is the clearest weak path: it has much higher request latency (p90 about 204-208ms versus 67-81ms on validators 2/3), lower loadgen CPU, and higher chain CPU per delivered request. Validator-4 is improved after reinstall but still slower than validators 2/3. The skew is application/host runtime latency under load, not packet loss or an exhausted load generator."
+  },
+  "success_criteria": {
+    "zero_rpc_errors": true,
+    "zero_nonce_errors": true,
+    "zero_network_errors": true,
+    "common_height_state_roots_match": true,
+    "host_profile_captured_for_all_validators": true,
+    "classifies_v1_v4_weakness": true
+  },
+  "decision": {
+    "status": "kept diagnostic; not green",
+    "reason": "The profile explains the item261 skew without changing protocol code. The weak hosts are not failing correctness, dropping packets, or exhausting loadgen CPU; they are slower application/runtime paths under load, especially validator-1. The run improves to 63,823.1 TPS by reusing seeded writers but remains below the 76k green recovery floor.",
+    "next_move": "Recover green by topology/deployment control, not protocol micro-tuning. Either remove validator-1 from the driven ingress set and replace that ingress capacity with healthier hosts/dedicated load generators, or provision fresh hosts for weak roles and rerun the exact item251 binary/config. Keep the four-validator consensus set unchanged until a codified topology result proves otherwise. Every live performance experiment from here must include a during-load profile artifact, or explicitly state why profiling is not applicable."
+  }
+}

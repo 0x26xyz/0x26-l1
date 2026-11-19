@@ -1,0 +1,85 @@
+{
+  "id": 245,
+  "name": "item219-topology-replay",
+  "status": "blocked_green_replay",
+  "date": "2026-04-26",
+  "git_tag": "chain-exp-245-item219-topology-replay-v4",
+  "purpose": "Reproduce the last known green live Mahi 100k-offered run by codifying the exact item-219 ingress topology before benchmarking again.",
+  "known_good_reference": {
+    "decision_log_item": 219,
+    "code_commit": "808f5b29a",
+    "artifact": "/tmp/and-live-distributed-ingress3-100k-soak60-reverted-32w-p1-20260426-114012",
+    "tps": 85382.0,
+    "offered_rps": 100000,
+    "duration_secs": 60,
+    "writers_per_endpoint": 32,
+    "pipeline_depth": 1,
+    "batch_size": 8,
+    "ingress_ports": [
+      8645,
+      8646,
+      8647
+    ]
+  },
+  "codified_environment": {
+    "inventory": "chain/deploy/ansible/inventory/testnet.yml",
+    "group_vars": "chain/deploy/ansible/inventory/group_vars/kombat_live_testnet.yml",
+    "runner": "chain/scripts/loadtest_live_network_multi_ingress.sh",
+    "validator_rpc_port": 8545,
+    "ingress_ports": [
+      8645,
+      8646,
+      8647
+    ],
+    "required_mahi_flags": {
+      "KOMBAT_CONSENSUS": "mahi",
+      "KOMBAT_MAHI_COMMIT_RULE": "mahi",
+      "KOMBAT_MAHI_OBSERVER_ASYNC_RELAY": "1",
+      "KOMBAT_MAHI_ASYNC_BLOCK_BROADCAST": "true",
+      "KOMBAT_MAHI_MERGED_EXECUTION_BATCH": "8",
+      "KOMBAT_MAHI_OWNER_RELAY_REDUNDANCY": "2",
+      "KOMBAT_MAHI_OWNER_RELAY_LAG_ROUNDS": "256"
+    }
+  },
+  "planned_deploy": {
+    "method": "ansible",
+    "command": "cd chain/deploy/ansible && .venv/bin/ansible-playbook playbooks/deploy.yml && .venv/bin/ansible-playbook playbooks/verify.yml",
+    "wipe_state_before_run": true
+  },
+  "planned_benchmark": {
+    "artifact": "/tmp/and-live-item219-topology-replay-100k-60s",
+    "command": "LOADTEST_OUTPUT_DIR=/tmp/and-live-item219-topology-replay-100k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 100000 60",
+    "success_gate": {
+      "request_errors": 0,
+      "state_roots_match_at_common_height": true,
+      "pre_admitted_pools_drained": true,
+      "green_tps_target": 85000
+    }
+  },
+  "result": {
+    "artifact": "/tmp/and-live-item219-topology-replay-100k-60s",
+    "deployed_binary_sha256": "dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd",
+    "local_experiment_anchor": "chain-exp-245-item219-topology-replay-v4",
+    "local_anchor_commit": "1598280c1",
+    "local_checkout_note": "Local main had later commit 9e3e32b4f during result recording; the live replay used the already-deployed dd022982 binary, not a rebuild from that checkout.",
+    "offered_rps": 100000,
+    "measured_rps_total": 84691.5,
+    "duration_secs": 60,
+    "committed_total": 4417077,
+    "committed_tps": 73618.0,
+    "ok_total": 5523048,
+    "nonce_err_total": 0,
+    "rpc_err_total": 0,
+    "net_err_total": 0,
+    "common_height": 230,
+    "block_hash_hex": "0xe6c35f4e51e60dc24e01bf83e95180b4582f603c61491decceef467af0491d92",
+    "state_root_hex": "0x1b675a03506a4a024f9f873ade8996dea0cda3a0524760fa7c6c95d3de5cc845",
+    "pre_admitted_pools_drained_after_status_check": true,
+    "endpoint_delivery_note": "validator-1 ingress endpoints delivered only 3116.5-3263.1 RPS each while validator-2/3/4 endpoints delivered about 8323-8401 RPS each. The green replay missed item 219 because delivered load was 84.7k RPS, not because of request errors or state divergence."
+  },
+  "notes": [
+    "This manifest exists before the run so the code, env shape, runner defaults, and benchmark command can be recovered from git.",
+    "The previous codified Ansible config incorrectly used port 8550 for the first ingress service; item-219 artifacts show the green topology used 8645.",
+    "The v4 tag includes explicit Ansible template paths relative to playbooks/deploy.yml."
+  ]
+}

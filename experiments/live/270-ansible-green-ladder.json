@@ -1,0 +1,92 @@
+{
+  "id": 270,
+  "title": "Ansible green ladder with four EU loadgen hosts",
+  "date": "2026-04-27",
+  "status": "kept 40k green floor; 60k binned",
+  "code_commit": "b2448f93a71a127eeda5ef236169632bd0cc8369",
+  "validator_binary_sha256": "dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd",
+  "loadgen_binary_sha256": "e5a6927cbf30e1abb0c580b1461fe198498e14b310c67af9ea7757211fcb01ef",
+  "inventory": "chain/deploy/ansible/inventory/testnet.yml",
+  "loadgen_host_pool": [
+    "root@203.0.113.10",
+    "root@203.0.113.12",
+    "root@203.0.113.11",
+    "root@203.0.113.13"
+  ],
+  "excluded_hosts": [
+    {
+      "host": "root@203.0.113.18",
+      "reason": "Known bad 2-vCPU/4GB runner that dropped SSH mid-load in item 268."
+    },
+    {
+      "host": "root@203.0.113.20",
+      "reason": "JPN node; excluded from EU green runs because it adds cross-region latency."
+    }
+  ],
+  "preflight": [
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible-playbook playbooks/verify.yml",
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible-playbook playbooks/reset_state.yml",
+    "LOADTEST_RUNNER_SSH_OPTS='-i ~/.ssh/id_n2_ssh -o StrictHostKeyChecking=no' bash -lc 'read -r -a opts <<< \"$LOADTEST_RUNNER_SSH_OPTS\"; ssh \"${opts[@]}\" root@203.0.113.13 hostname'"
+  ],
+  "attempts": [
+    {
+      "name": "270a-40k-green",
+      "command": "LOADTEST_RUNNER_SSH_OPTS='-i ~/.ssh/id_n2_ssh -o StrictHostKeyChecking=no' LOADTEST_EXTERNAL_RUNNER_HOSTS='root@203.0.113.10 root@203.0.113.12 root@203.0.113.11 root@203.0.113.13' LOADTEST_OUTPUT_DIR=/tmp/and-live-270a-ansible-green-ladder-40k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=4 LOADTEST_STRICT_NONCE_RETRY=0 LOADTEST_FAIL_ON_ERRORS=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 40000 60",
+      "artifact": "/tmp/and-live-270a-ansible-green-ladder-40k-60s",
+      "aggregate_summary_sha256": "911fb0b9d6e2e84b67be0cd8f247ee822727adb10117cd19611fa37e38f03003",
+      "writers_sha256": "a15b28cfeaf877fa6453e6d7dab6b7312faf87ba5368b2f03b1cb8f76db9c77f",
+      "convergence_sha256": "596a3468a0cd46353549da00f740638dff8d0e9714640820e69ef3085ddc500a",
+      "network_status_sha256": "d5b6b3f40203cfd5dd0e23f807043652f8053335b813bafcebbf202a09986f10",
+      "status": "kept",
+      "measured_rps_total": 32804.8,
+      "ok_total": 2052168,
+      "committed_total": 2052168,
+      "committed_tps": 34202.8,
+      "rpc_err_total": 0,
+      "nonce_err_total": 0,
+      "net_err_total": 0,
+      "common_height": 130,
+      "common_head_hash_hex": "0x8cb72581e13c6812e59356a839f6f8bdc94b7482b257fd9c380045fae2ac408d",
+      "common_state_root_hex": "0x89bad640d09397a1f00fccc09de065d6bc7a3de3ef10cfdf57d32f0c0d3f92a2",
+      "weak_endpoints": [
+        "validator-4-p8645-60s 846.5 RPS",
+        "validator-1-p8646-60s 1157.7 RPS",
+        "validator-2-p8647-60s 1437.1 RPS"
+      ],
+      "reason": "Clean low-load green rung with matching block/state roots and drained queues, but it only delivered 32.8k measured RPS against 40k offered."
+    },
+    {
+      "name": "270b-60k-undrained-binned",
+      "command": "LOADTEST_RUNNER_SSH_OPTS='-i ~/.ssh/id_n2_ssh -o StrictHostKeyChecking=no' LOADTEST_EXTERNAL_RUNNER_HOSTS='root@203.0.113.10 root@203.0.113.12 root@203.0.113.11 root@203.0.113.13' LOADTEST_OUTPUT_DIR=/tmp/and-live-270b-ansible-green-ladder-60k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=4 LOADTEST_STRICT_NONCE_RETRY=0 LOADTEST_FAIL_ON_ERRORS=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 60000 60",
+      "artifact": "/tmp/and-live-270b-ansible-green-ladder-60k-60s",
+      "aggregate_summary_sha256": "3f2e1d6260c3736efe532891ffb05e6f93e7b7637f456b4cf5380e3400df1857",
+      "writers_sha256": "451fa4541d3d5b5de9183c20142364eb8cd840ddafb71109144f8890e50b4bdb",
+      "convergence_sha256": "15834b834a31b53a71fa5d7fb72a2cc81220c35d9d17aebe9467eedc10d9edbc",
+      "network_status_sha256": "b4c09b3ee4de28dbcc9337ba08a5b72e2214fff69c50bb54620641fb51f74a25",
+      "status": "binned",
+      "measured_rps_total": 42009.6,
+      "ok_total": 2699304,
+      "committed_total": 2699304,
+      "committed_tps": 44988.4,
+      "rpc_err_total": 0,
+      "nonce_err_total": 0,
+      "net_err_total": 0,
+      "common_height": 102,
+      "common_head_hash_hex": "0x941ed2fb75adafb3ceec04c97ff32d93278f77acfb72840576450193b06cacfc",
+      "common_state_root_hex": "0xb5456b95a0443ce2457f7ff794104bd3753d65ddadad95f3b76e6eabc833b4e4",
+      "residual_mahi_pre_admitted_pool_items": {
+        "validator-1": 0,
+        "validator-2": 324,
+        "validator-3": 0,
+        "validator-4": 0
+      },
+      "weak_endpoints": [
+        "validator-4-p8645-60s 1441.7 RPS",
+        "validator-2-p8647-60s 1663.1 RPS",
+        "validator-1-p8646-60s 1727.3 RPS"
+      ],
+      "reason": "The rung still converged on block/state root and had zero RPC/nonce/network errors, but validator-2 retained 324 mahi pre-admitted items after an extra 30s settle. That is not a fully drained green result, so the ladder stops here."
+    }
+  ],
+  "conclusion": "The four-EU-runner setup is now valid and reproducible. Current main has a clean live green floor at 40k/60s, but it under-delivers to 32.8k measured RPS and 34.2k committed TPS. The first non-green rung is 60k/60s because validator-2 keeps a 324-item mahi pre-admitted tail after extra settle."
+}

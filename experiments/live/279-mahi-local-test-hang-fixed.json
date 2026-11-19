@@ -1,0 +1,58 @@
+{
+  "id": 279,
+  "title": "Local MAHI test hang fixed after RFC027 handoff",
+  "date": "2026-05-04",
+  "status": "local test hang fixed; does not resolve live RFC027 MM divergence",
+  "history_ingested": {
+    "live_entries": "245-278",
+    "local_entries": "266-267",
+    "non_json_entries": [
+      "chain/experiments/live/252-six-ingress-topology.vars.yml",
+      "chain/experiments/live/260-packed-v4-on-v3-hosts.txt"
+    ],
+    "required_context": "This entry updates the stale local-test caveat from experiments 277 and 278 after re-ingesting the full experiment history. It only changes the validation guidance for local MAHI tests; item 277 remains the active live RFC027 MM/taker/candle diagnostic."
+  },
+  "problem": {
+    "summary": "The RFC027 live handoff warned that broad local MAHI tests were known to hang. That caveat is now stale.",
+    "root_cause": "The RPC MAHI test hang was a same-thread self-deadlock: a test held the global env-var mutex through with_env_vars, then called consensus_metrics, which called with_legacy_delegation_bridge_enabled, which called with_env_vars again and tried to lock the same non-reentrant mutex.",
+    "secondary_build_issue": "The consensus MAHI test binary also failed to build because MahiBlock gained a faucets: Vec<BlockFaucet> field and two test constructors were missing faucets: Vec::new()."
+  },
+  "changes": [
+    {
+      "file": "chain/crates/consensus/src/mahi/mod.rs",
+      "change": "Added faucets: Vec::new() to the two MahiBlock test constructors that predated the new faucets payload field.",
+      "scope": "Test constructor build fix only."
+    },
+    {
+      "file": "chain/crates/rpc/src/lib.rs",
+      "change": "Made the test-only with_env_vars helper reentrant for nested same-thread calls by adding a thread-local ENV_LOCK_DEPTH counter. The outer call still holds the global env lock against other test threads; nested calls skip re-locking but keep their own save/set/restore behavior. The helper now also restores env vars and decrements depth before resuming unwinds if the callback panics.",
+      "scope": "Test helper deadlock fix only."
+    }
+  ],
+  "validation": {
+    "reported_result": "All 72 local MAHI tests pass: 27 consensus + 11 node + 34 RPC, in about 1.07s total.",
+    "verified_result": "Re-run locally in this workspace after the experiment update: 27 consensus MAHI tests passed, 11 node MAHI tests passed, and 34 RPC MAHI tests passed. The RPC filter, which previously hung, completed in 1.13s test time after making with_env_vars unwind-safe.",
+    "test_filters": [
+      "cargo test -p kombat-chain-consensus mahi --manifest-path chain/Cargo.toml",
+      "cargo test -p kombat-chain-node mahi --manifest-path chain/Cargo.toml",
+      "cargo test -p kombat-chain-rpc mahi --manifest-path chain/Cargo.toml"
+    ],
+    "warnings": [
+      "The node/RPC test builds still emit RFC042 durable-helper dead-code warnings because live production paths are not cut over to durable variants yet."
+    ],
+    "interpretation": "Broad local MAHI tests are usable regression checks again. Passing them is not proof that the live RFC027 MM bot, taker bot, market-data, and candle path are fixed."
+  },
+  "live_rfc027_status": {
+    "unchanged": true,
+    "reason": "The live issue in item 277 is cross-validator read-model/orderbook divergence: committed_state_root and MAHI commit_log_hash can match while MAHI state_hash and orderbook contents disagree. The local test-hang fix does not address that production diagnostic.",
+    "next_debugging_gate": "Audit typed SingleNodeEngine mutations and add a multi-validator MAHI test that proves one maker and one taker intent produce identical orderbook, positions, trade history, runtime events, intent status, committed root, and MAHI state hash across validators."
+  },
+  "review_notes": [
+    "Keep this change separate from unrelated RPC read-model/notional-scaling changes if committing. The MAHI hang fix is small and test-helper scoped."
+  ],
+  "do_not_repeat": [
+    "Do not leave stale experiment caveats in place after validation assumptions change.",
+    "Do not treat local MAHI test success as proof that live MM/taker/candle behavior is fixed.",
+    "Do not mix unrelated UI/RPC read-model fixes into the MAHI-test-hang commit without explicit review."
+  ]
+}

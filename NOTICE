@@ -1,0 +1,27 @@
+0x26 L1
+Copyright (c) 2026 Wayne Douglas and the 0x26 Chain authors.
+
+Third-party work this repository builds on:
+
+Mahi-Mahi
+  The DAG ordering layer in crates/consensus/src/mahi follows the committer
+  organization of the Mahi-Mahi reference implementation by Pasindu Tennage
+  and contributors (https://github.com/PasinduTennage/mahi-mahi-consensus,
+  revision 13a2819800ad3b192ab3c54dfe3ec4d0b34ae361), and the protocol of:
+  Jovanovic, Kokoris Kogias, Kumara, Sonnino, Tennage, and Zablotchi.
+  "Mahi-Mahi: Low-Latency Asynchronous BFT DAG-Based Consensus." ICDCS 2025.
+
+Mysticeti
+  The Mahi-Mahi reference implementation builds on Mysticeti by Mysten Labs
+  (https://github.com/MystenLabs/mysticeti), licensed under the Apache
+  License, Version 2.0. The selectable Mysticeti-named commit rule in this
+  repository follows:
+  Babel, Chursin, Danezis, Kichidis, Kokoris-Kogias, Koshy, Sonnino, and Tian.
+  "Mysticeti: Reaching the Latency Limits with Uncertified DAGs." NDSS 2025.
+
+This repository's configuration differs from both protocols (round-robin
+leaders, one leader slot, no pipeline, no shared coin). Their published
+safety and liveness results do not transfer to it.
+
+Other third-party Rust crates are listed in Cargo.lock and remain under their
+own licences.

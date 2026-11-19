@@ -1,0 +1,119 @@
+{
+  "id": 251,
+  "name": "validator1-nginx-isolation",
+  "status": "kept_diagnostic",
+  "date": "2026-04-26",
+  "base_results": [
+    {
+      "decision_log_item": 219,
+      "committed_tps": 85382.0,
+      "finding": "known green live reference with 12 ingress endpoints"
+    },
+    {
+      "decision_log_item": 245,
+      "committed_tps": 73618.0,
+      "finding": "current binary with corrected item-219 ports was correct but underdelivered, especially on validator-1 ingress"
+    },
+    {
+      "decision_log_item": 249,
+      "committed_tps": 30750.7,
+      "finding": "known-good binary did not reproduce with current environment; validator-1 ingress was the slow endpoint group"
+    },
+    {
+      "decision_log_item": 250,
+      "finding": "environment snapshot found nginx running only on validator-1 with 16 workers and listeners on 80/443"
+    }
+  ],
+  "hypothesis": "validator-1's extra nginx workload is a live environment delta that contributes to its slow ingress delivery. Stopping non-chain nginx before a clean item-219 topology replay should improve validator-1 endpoint delivery and recover green TPS if host-local CPU/process contention was the dominant current drift.",
+  "files": [
+    "chain/deploy/ansible/playbooks/stop_non_chain_services.yml",
+    "chain/experiments/live/251-validator1-nginx-isolation.json"
+  ],
+  "environment_controls": {
+    "deployed_binary_path": "/tmp/kombat_chain-live-dd022982",
+    "deployed_binary_sha256": "dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd",
+    "services_to_stop": [
+      "nginx"
+    ],
+    "chain_services": [
+      "kombat-chain",
+      "kombat-chain-ingress",
+      "kombat-chain-ingress2",
+      "kombat-chain-ingress3"
+    ],
+    "ingress_ports": [
+      8645,
+      8646,
+      8647
+    ]
+  },
+  "planned_commands": [
+    {
+      "description": "stop non-chain nginx through Ansible and print before/after service state",
+      "command": "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) KOMBAT_NON_CHAIN_SERVICES_TO_STOP=nginx .venv/bin/ansible-playbook playbooks/stop_non_chain_services.yml"
+    },
+    {
+      "description": "verify current binary and Mahi service config",
+      "command": "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) KOMBAT_BINARY_PATH=/tmp/kombat_chain-live-dd022982 .venv/bin/ansible-playbook playbooks/verify.yml"
+    },
+    {
+      "description": "wipe chain state and restart current chain services",
+      "command": "KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible kombat_live_testnet -m shell -a 'systemctl stop kombat-chain-ingress3 kombat-chain-ingress2 kombat-chain-ingress kombat-chain && rm -rf /var/lib/and-chain && mkdir -p /var/lib/and-chain/snapshots && chown -R and-chain:and-chain /var/lib/and-chain && systemctl start kombat-chain && systemctl start kombat-chain-ingress kombat-chain-ingress2 kombat-chain-ingress3'"
+    },
+    {
+      "description": "replay item-219-equivalent 12 endpoint p1 benchmark",
+      "artifact": "/tmp/and-live-251-v1-nginx-stopped-100k-60s",
+      "command": "LOADTEST_OUTPUT_DIR=/tmp/and-live-251-v1-nginx-stopped-100k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=1 LOADTEST_FAIL_ON_ERRORS=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 100000 60"
+    }
+  ],
+  "success_criteria": {
+    "primary": "state roots match at common height, request errors remain zero, Mahi pools drain after standard drain, and committed TPS approaches or beats the 85,382 TPS item-219 green reference",
+    "secondary": "validator-1 ingress endpoint measured RPS moves materially closer to the other validators"
+  },
+  "rollback": {
+    "service_restore": "systemctl start nginx on validator-1 if the stopped service needs to be restored after the experiment",
+    "chain_restore": "rerun chain/deploy/ansible/playbooks/deploy.yml with KOMBAT_BINARY_PATH=/tmp/kombat_chain-live-dd022982"
+  },
+  "result": {
+    "artifact": "/tmp/and-live-251-v1-nginx-stopped-100k-60s",
+    "committed_total": 4660008,
+    "committed_tps": 77666.8,
+    "measured_rps_total": 71634.5,
+    "ok_total": 4660008,
+    "nonce_err_total": 0,
+    "rpc_err_total": 0,
+    "net_err_total": 0,
+    "common_height": 143,
+    "block_hash": "0x53d62fb065fb86f09e5f5aea14ccfcf43c80dd38e5339c9bfb3cf9a6745951af",
+    "state_root": "0x3817e823597db3f4483dec6135d96689f8d094532abd16c0011f1cbe2f3fb3bc",
+    "mahi_pre_admitted_pools_drained": true,
+    "nginx_state": {
+      "validator-1_before": "active=active enabled=enabled",
+      "validator-1_after": "active=inactive enabled=enabled",
+      "validators_2_to_4": "absent"
+    },
+    "endpoint_measured_rps": {
+      "validator-1": [
+        2473.6,
+        2508.0,
+        2548.5
+      ],
+      "validator-2": [
+        8337.1,
+        8337.1,
+        8335.6
+      ],
+      "validator-3": [
+        8334.7,
+        8334.3,
+        8337.1
+      ],
+      "validator-4": [
+        4722.0,
+        4659.7,
+        4706.8
+      ]
+    },
+    "decision": "Kept diagnostic. Stopping nginx is a valid chain-host isolation step and the run recovered materially versus item 249, but it did not restore item-219 green TPS. Validator-1 remained the weakest ingress host, and validator-4 also underdelivered; v2 and v3 hit the target band."
+  }
+}

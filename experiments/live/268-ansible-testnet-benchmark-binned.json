@@ -1,0 +1,84 @@
+{
+  "id": 268,
+  "title": "Ansible testnet benchmark rerun",
+  "date": "2026-04-27",
+  "status": "binned",
+  "code_commit": "265ef923717f80065763bb2a5645012cb30c0727",
+  "validator_binary_sha256": "dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd",
+  "loadgen_binary_sha256": "e5a6927cbf30e1abb0c580b1461fe198498e14b310c67af9ea7757211fcb01ef",
+  "inventory": "chain/deploy/ansible/inventory/testnet.yml",
+  "topology": {
+    "validators": [
+      "validator-1 root@203.0.113.15",
+      "validator-2 root@203.0.113.17",
+      "validator-3 root@203.0.113.14",
+      "validator-4 root@203.0.113.16"
+    ],
+    "ingress_ports": [
+      8645,
+      8646,
+      8647
+    ]
+  },
+  "preflight": [
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible-playbook playbooks/verify.yml",
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible-playbook playbooks/reset_state.yml"
+  ],
+  "attempts": [
+    {
+      "name": "268a-old-writers-invalid",
+      "artifact": "/tmp/and-live-268-ansible-testnet-100k-60s",
+      "status": "invalid",
+      "reason": "Clean reset invalidated reused writer manifest from item 261. All endpoints failed before load when kombat_getPolicy returned no result."
+    },
+    {
+      "name": "268b-fresh-writers-four-loadgen-hosts",
+      "command": "LOADTEST_EXTERNAL_RUNNER_HOSTS='root@203.0.113.10 root@203.0.113.12 root@203.0.113.18 root@203.0.113.11' LOADTEST_OUTPUT_DIR=/tmp/and-live-268b-ansible-testnet-fresh-writers-100k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=4 LOADTEST_STRICT_NONCE_RETRY=0 LOADTEST_FAIL_ON_ERRORS=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 100000 60",
+      "artifact": "/tmp/and-live-268b-ansible-testnet-fresh-writers-100k-60s",
+      "profile_artifact": "/tmp/and-live-268b-load-window-profile-100k-60s",
+      "loadgen_profile_artifact": "/tmp/and-live-268b-loadgen-profile-100k-60s",
+      "writers_sha256": "8e81381939849830121b825713c733337366ccf9a02bb635f891bf3cb3e7a39b",
+      "status": "invalid",
+      "reason": "External loadgen host root@203.0.113.18 closed the SSH session for validator-1:8646 during load. This is a loadgen transport failure, not a chain throughput result.",
+      "completed_endpoints": 11,
+      "failed_endpoints": [
+        "validator-1-p8646-60s"
+      ],
+      "measured_rps_completed_endpoints": 53914.7,
+      "ok_completed_endpoints": 3485544,
+      "errors_completed_endpoints": 0
+    },
+    {
+      "name": "268c-three-loadgen-hosts",
+      "command": "LOADTEST_EXTERNAL_RUNNER_HOSTS='root@203.0.113.10 root@203.0.113.12 root@203.0.113.11' LOADTEST_WRITERS_JSON=/tmp/and-live-268b-ansible-testnet-fresh-writers-100k-60s/writers-all.json LOADTEST_OUTPUT_DIR=/tmp/and-live-268c-ansible-testnet-three-loadgen-hosts-100k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=4 LOADTEST_STRICT_NONCE_RETRY=0 LOADTEST_FAIL_ON_ERRORS=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 100000 60",
+      "artifact": "/tmp/and-live-268c-ansible-testnet-three-loadgen-hosts-100k-60s",
+      "aggregate_summary_sha256": "596a543c04ef9ac290238015f0b6a461911d6a98511032a839eeccd0cb0a0fc2",
+      "profile_artifact": "/tmp/and-live-268c-load-window-profile-100k-60s",
+      "loadgen_profile_artifact": "/tmp/and-live-268c-loadgen-profile-100k-60s",
+      "status": "binned",
+      "reason": "Excluding the flaky loadgen host avoided SSH failure but under-drove the network and did not converge: v1-v3 stayed at height 260 with head 0xa780f6a81a988f3b93fe79287643b61af95cf14641051d0f2d75b72c2c818a7f while v4 stayed at height 258 with head 0xbd90dbb48e2caef11485a2d074a454cfa81b3348341b8e6f975da913d585db91 after settle.",
+      "endpoint_count": 12,
+      "measured_rps_total": 45512.8,
+      "ok_total": 2959424,
+      "committed_total": 2766329,
+      "rpc_err_total": 0,
+      "nonce_err_total": 0,
+      "net_err_total": 0
+    }
+  ],
+  "profile_hashes": {
+    "268b_validator_1_tgz": "5f65bc9a9b2cf7d58dea8be3c120f419f4854b230aea8702b909ce3a532907f4",
+    "268b_validator_2_tgz": "e5eacffd937d681f59e79fb69e3a36c8f0e4965c63b528848f93d18320f266fe",
+    "268b_validator_3_tgz": "0e2aa57212b7a97ac017810048b5a12140702a6c4010d1e59a61a696230ebf78",
+    "268b_validator_4_tgz": "c5d1051ab8ca7d825eb51a3192ba0422c6e2d844e4d9f56de82b9423240134b8",
+    "268c_validator_1_tgz": "6c64d8cc3594054a4de067314e10f77e439d594f1e7a47c4ef296827f8a90738",
+    "268c_validator_2_tgz": "52f143563c2f1f43f71b1ddf72c0ea38f47c6d4f066245a6a42b9f1e4b71c0d2",
+    "268c_validator_3_tgz": "065a9c3df614a56ac3c4cf4df9de6a30dc076fd13fadfddd9129e27832e899b2",
+    "268c_validator_4_tgz": "db8e10bf7ae6d90aadb3518fe6cd9d42c42f33c688caa7a21277e74e357cba83"
+  },
+  "post_run_cleanup": [
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible-playbook playbooks/reset_state.yml",
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible-playbook playbooks/verify.yml"
+  ],
+  "conclusion": "More loadgen hosts did not make the chain path worse. The four-host run failed because one loadgen host dropped SSH mid-load. The three-host rerun was under-driven and produced a non-converged head, so it is binned. The next benchmark should use four reliable loadgen hosts or run loadgen processes under persistent systemd units/tmux instead of transient SSH sessions."
+}

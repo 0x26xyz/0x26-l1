@@ -1,0 +1,49 @@
+- import_playbook: deploy_llm_trader.yml
+  vars:
+    and_chain_llm_trader_service_name: and-llm-trader
+    and_chain_llm_trader_env_file: /etc/and-chain/llm-trader.env
+    and_chain_llm_trader_market_id: 7
+    and_chain_llm_trader_account_id: 270101
+    and_chain_llm_trader_policy_id: 27010102
+    and_chain_llm_trader_evm_address_hex: "0x000000000000000000000000000000000041e1a5"
+    and_chain_llm_trader_run_fund: false
+
+- import_playbook: deploy_llm_trader.yml
+  vars:
+    and_chain_llm_trader_service_name: and-llm-trader-eth
+    and_chain_llm_trader_env_file: /etc/and-chain/llm-trader-eth.env
+    and_chain_llm_trader_market_id: 8
+    and_chain_llm_trader_account_id: 270102
+    and_chain_llm_trader_policy_id: 27010201
+    and_chain_llm_trader_evm_address_hex: "0x000000000000000000000000000000000041e1a6"
+    and_chain_llm_trader_run_fund: false
+
+- import_playbook: deploy_llm_trader.yml
+  vars:
+    and_chain_llm_trader_service_name: and-llm-trader-sol
+    and_chain_llm_trader_env_file: /etc/and-chain/llm-trader-sol.env
+    and_chain_llm_trader_market_id: 9
+    and_chain_llm_trader_account_id: 270103
+    and_chain_llm_trader_policy_id: 27010301
+    and_chain_llm_trader_evm_address_hex: "0x000000000000000000000000000000000041e1a7"
+    and_chain_llm_trader_run_fund: false
+
+- import_playbook: deploy_llm_trader.yml
+  vars:
+    and_chain_llm_trader_service_name: and-llm-trader-doge
+    and_chain_llm_trader_env_file: /etc/and-chain/llm-trader-doge.env
+    and_chain_llm_trader_market_id: 10
+    and_chain_llm_trader_account_id: 270104
+    and_chain_llm_trader_policy_id: 27010401
+    and_chain_llm_trader_evm_address_hex: "0x000000000000000000000000000000000041e1a8"
+    and_chain_llm_trader_run_fund: false
+
+- import_playbook: deploy_llm_trader.yml
+  vars:
+    and_chain_llm_trader_service_name: and-llm-trader-xrp
+    and_chain_llm_trader_env_file: /etc/and-chain/llm-trader-xrp.env
+    and_chain_llm_trader_market_id: 11
+    and_chain_llm_trader_account_id: 270105
+    and_chain_llm_trader_policy_id: 27010501
+    and_chain_llm_trader_evm_address_hex: "0x000000000000000000000000000000000041e1a9"
+    and_chain_llm_trader_run_fund: false

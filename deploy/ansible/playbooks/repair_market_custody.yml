@@ -1,0 +1,120 @@
+- name: Repair RFC 053 market-custody excess on stopped redb state
+  hosts: kombat_live_testnet
+  gather_facts: false
+  become: true
+  vars:
+    validator_service_name: "{{ and_chain_validator_service_name | default('kombat-chain') }}"
+    ingress_service_names: "{{ and_chain_ingress_services | map(attribute='name') | list }}"
+    chain_services: "{{ [validator_service_name] + ingress_service_names }}"
+    repair_apply: "{{ and_chain_repair_market_custody_apply | default(false) | bool }}"
+    repair_start_services: "{{ and_chain_repair_market_custody_start_services | default(true) | bool }}"
+    repair_report_dir: "{{ and_chain_state_dir }}/migration-reports"
+    repair_report_prefix: "{{ repair_report_dir }}/market-custody-repair"
+    chain_binary: "{{ and_chain_install_root }}/bin/kombat_chain"
+    source_backend_path: "{{ and_chain_state_dir }}/state.redb"
+  tasks:
+    - name: Check source backend file exists before stopping services
+      ansible.builtin.stat:
+        path: "{{ source_backend_path }}"
+      register: source_backend_stat
+
+    - name: Require existing source backend for custody repair
+      ansible.builtin.assert:
+        that:
+          - source_backend_stat.stat.exists
+          - source_backend_stat.stat.isreg | default(false)
+        fail_msg: >-
+          Refusing market-custody repair because {{ source_backend_path }} is missing.
+          This playbook is non-resettable and must not start services into fresh state.
+
+    - name: Stop chain services before repair
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: stopped
+      loop: "{{ chain_services }}"
+
+    - name: Clear failed chain service state
+      ansible.builtin.command: "systemctl reset-failed {{ item }}"
+      changed_when: false
+      failed_when: false
+      loop: "{{ chain_services }}"
+
+    - name: Ensure repair report directory exists
+      ansible.builtin.file:
+        path: "{{ repair_report_dir }}"
+        state: directory
+        owner: "{{ and_chain_user }}"
+        group: "{{ and_chain_group }}"
+        mode: "0750"
+
+    - name: Dry-run market-custody repair
+      ansible.builtin.command:
+        argv:
+          - "{{ chain_binary }}"
+          - repair-market-custody
+          - --data-dir
+          - "{{ and_chain_state_dir }}"
+          - --dry-run
+          - --format
+          - json
+          - --report
+          - "{{ repair_report_prefix }}.dry-run.json"
+      register: repair_dry_run
+      changed_when: false
+      failed_when: repair_dry_run.rc != 0
+
+    - name: Parse dry-run repair report
+      ansible.builtin.set_fact:
+        repair_dry_run_json: "{{ repair_dry_run.stdout | from_json }}"
+
+    - name: Require explicit apply flag when repair is available
+      ansible.builtin.assert:
+        that:
+          - repair_apply or repair_dry_run_json.result == 'already_consistent'
+        fail_msg: >-
+          Market-custody repair is available but not applied. Re-run with
+          -e and_chain_repair_market_custody_apply=true after reviewing
+          {{ repair_report_prefix }}.dry-run.json.
+
+    - name: Apply market-custody repair
+      ansible.builtin.command:
+        argv:
+          - "{{ chain_binary }}"
+          - repair-market-custody
+          - --data-dir
+          - "{{ and_chain_state_dir }}"
+          - --confirm
+          - repair-market-custody
+          - --format
+          - json
+          - --report
+          - "{{ repair_report_prefix }}.apply.json"
+      register: repair_apply_result
+      changed_when: repair_apply_result.rc == 0
+      failed_when: repair_apply_result.rc != 0
+      when: repair_apply and repair_dry_run_json.result != 'already_consistent'
+
+    - name: Hydrate backend after repair
+      ansible.builtin.command:
+        argv:
+          - "{{ chain_binary }}"
+          - migrate-state
+          - --data-dir
+          - "{{ and_chain_state_dir }}"
+          - --to
+          - current
+          - --dry-run
+          - --format
+          - json
+          - --report
+          - "{{ repair_report_prefix }}.hydrate-check.json"
+      register: hydration_check
+      changed_when: false
+      failed_when: hydration_check.rc != 0
+
+    - name: Start chain services after repair
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: started
+      loop: "{{ chain_services }}"
+      when: repair_start_services

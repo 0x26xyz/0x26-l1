@@ -1,0 +1,35 @@
+- name: Reset Kombat live testnet faucet limiter
+  hosts: kombat_live_testnet
+  gather_facts: false
+  run_once: true
+  vars:
+    faucet_redis_namespace: "{{ and_chain_faucet_k8s_namespace | default('pvp-platform') }}"
+    faucet_redis_secret_name: "{{ and_chain_faucet_redis_secret_name | default('and-chain-faucet-redis-secret') }}"
+    faucet_redis_secret_key: "{{ and_chain_faucet_redis_secret_key | default('REDIS_PASSWORD') }}"
+    faucet_redis_host: "{{ and_chain_faucet_redis_node_host | default('203.0.113.11') }}"
+    faucet_redis_port: "{{ and_chain_faucet_redis_node_port | default('31379') }}"
+  tasks:
+    - name: Clear faucet Redis limiter keys
+      ansible.builtin.shell: |
+        set -euo pipefail
+        command -v redis-cli >/dev/null
+        password="$(kubectl get secret -n "{{ faucet_redis_namespace }}" "{{ faucet_redis_secret_name }}" -o "jsonpath={.data.{{ faucet_redis_secret_key }}}" | base64 --decode)"
+        export REDISCLI_AUTH="$password"
+        tmp="$(mktemp)"
+        trap 'rm -f "$tmp"' EXIT
+        redis-cli -h "{{ faucet_redis_host }}" -p "{{ faucet_redis_port }}" --scan --pattern 'faucet:*' > "$tmp"
+        count="$(wc -l < "$tmp" | tr -d ' ')"
+        if [ "$count" -gt 0 ]; then
+          xargs redis-cli -h "{{ faucet_redis_host }}" -p "{{ faucet_redis_port }}" DEL < "$tmp" >/dev/null
+        fi
+        printf 'cleared %s faucet limiter keys\n' "$count"
+      args:
+        executable: /bin/bash
+      delegate_to: localhost
+      become: false
+      register: faucet_limiter_reset
+      changed_when: "'cleared 0 faucet limiter keys' not in faucet_limiter_reset.stdout"
+
+    - name: Report faucet limiter reset
+      ansible.builtin.debug:
+        msg: "{{ faucet_limiter_reset.stdout }}"

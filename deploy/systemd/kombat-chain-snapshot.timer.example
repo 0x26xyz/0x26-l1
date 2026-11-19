@@ -1,0 +1,10 @@
+[Unit]
+Description=Run & chain snapshot save hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+Unit=kombat-chain-snapshot.service
+
+[Install]
+WantedBy=timers.target

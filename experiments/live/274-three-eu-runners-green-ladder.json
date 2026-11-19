@@ -1,0 +1,125 @@
+{
+  "id": 274,
+  "title": "Three clean EU runners after excluding contaminated 207",
+  "date": "2026-04-27",
+  "status": "kept green at 40k and 60k; still under-driven on 3-runner topology",
+  "code_commit": "b0db3de58235b7993a8b17a6703716d873de893a",
+  "validator_binary_sha256": "dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd",
+  "loadgen_binary_sha256": "3556e24585463ca9602bf8839acd88f4c54835283fe28300fa4d8c618fa12e26",
+  "inventory": "chain/deploy/ansible/inventory/testnet.yml",
+  "inventory_note": "The checked-in inventory still referenced root@203.0.113.11 during item 274. The actual runner pool for these runs was supplied explicitly via LOADTEST_EXTERNAL_RUNNER_HOSTS and excluded it.",
+  "topology": {
+    "validators": [
+      "validator-1 root@203.0.113.15",
+      "validator-2 root@203.0.113.17",
+      "validator-3 root@203.0.113.14",
+      "validator-4 root@203.0.113.16"
+    ],
+    "ingress_ports": [
+      8645,
+      8646,
+      8647
+    ],
+    "loadgen_hosts": [
+      "root@203.0.113.10",
+      "root@203.0.113.12",
+      "root@203.0.113.13"
+    ],
+    "excluded_runners": [
+      "root@203.0.113.11",
+      "root@203.0.113.18",
+      "root@203.0.113.20"
+    ],
+    "writer_seed_tag": 270,
+    "seed_concurrency": 16,
+    "endpoint_to_runner_mapping": {
+      "8645": "root@203.0.113.12",
+      "8646": "root@203.0.113.13",
+      "8647": "root@203.0.113.10"
+    },
+    "mapping_note": "loadtest_live_network_multi_ingress.sh assigns ext_hosts[endpoint_index % host_count] after incrementing endpoint_index, so the first endpoint lands on host index 1."
+  },
+  "preflight": [
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible-playbook playbooks/reset_state.yml",
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible-playbook playbooks/verify.yml"
+  ],
+  "attempts": [
+    {
+      "name": "274a-three-eu-runners-40k-60s-green",
+      "command": "LOADTEST_RUNNER_SSH_OPTS='-i ~/.ssh/id_n2_ssh -o StrictHostKeyChecking=no' LOADTEST_EXTERNAL_RUNNER_HOSTS='root@203.0.113.10 root@203.0.113.12 root@203.0.113.13' LOADTEST_WRITER_SEED_TAG=270 LOADTEST_SEED_CONCURRENCY=16 LOADTEST_REMOTE_CACHE_DIR=/var/tmp/kombat-loadgen-cache LOADTEST_PAYLOAD_CACHE=1 LOADTEST_OUTPUT_DIR=/tmp/and-live-274a-three-eu-runners-40k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=4 LOADTEST_STRICT_NONCE_RETRY=0 LOADTEST_FAIL_ON_ERRORS=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 40000 60",
+      "artifact": "/tmp/and-live-274a-three-eu-runners-40k-60s",
+      "aggregate_summary_sha256": "88bbfb0c7b7f1f97bf2d44493340d64b0959f50381c61f7845d5d89412afc39c",
+      "writers_sha256": "3da7f9495b61e24673bc2f17ae5b2de74d38e2fc0d6f8061ebbc026eb2cfc0c0",
+      "post_run_network_status_sha256": "d26989eac9a3b0d6a9e0cb852ee8b585ce316195408fe4c6c7350b5eb290e386",
+      "state_roots_sha256": "ca90efb592163ac3c2399ea7921ec8e76e639f5b3d91e16729b688cf7a16e376",
+      "runner_profile_dir": "/tmp/and-live-274a-three-eu-runners-40k-60s/runner-profiles",
+      "runner_profile_snapshots": 91,
+      "status": "green",
+      "reason": "Clean reset and verify passed. The run finished with zero RPC/nonce/network errors, full convergence, shared state root, and drained relay plus Mahi queues.",
+      "endpoint_count": 12,
+      "measured_rps_total": 38051.3,
+      "ok_total": 2343616,
+      "committed_total": 2343616,
+      "committed_tps": 39060.3,
+      "rpc_err_total": 0,
+      "nonce_err_total": 0,
+      "net_err_total": 0,
+      "converged_height": 203,
+      "head_hash": "0x71167ffc0235da31c7457ff2afc0c687efdf05ad9307ef8bb6a953a39629a1f3",
+      "state_root_hex": "0xa8b63e919c20922f5f747f3786bfbfbf42e6be2c13f5072f93273f5baa37f3bd",
+      "endpoint_rps_band": {
+        "min": 2969.1,
+        "max": 3333.9
+      }
+    },
+    {
+      "name": "274b-three-eu-runners-60k-60s-green-underdriven",
+      "command": "LOADTEST_RUNNER_SSH_OPTS='-i ~/.ssh/id_n2_ssh -o StrictHostKeyChecking=no' LOADTEST_EXTERNAL_RUNNER_HOSTS='root@203.0.113.10 root@203.0.113.12 root@203.0.113.13' LOADTEST_WRITER_SEED_TAG=270 LOADTEST_SEED_CONCURRENCY=16 LOADTEST_REMOTE_CACHE_DIR=/var/tmp/kombat-loadgen-cache LOADTEST_PAYLOAD_CACHE=1 LOADTEST_OUTPUT_DIR=/tmp/and-live-274b-three-eu-runners-60k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=4 LOADTEST_STRICT_NONCE_RETRY=0 LOADTEST_FAIL_ON_ERRORS=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 60000 60",
+      "artifact": "/tmp/and-live-274b-three-eu-runners-60k-60s",
+      "aggregate_summary_sha256": "2f3497de49f525a52dccb3001e40dcb75cbe55c331541aed6ea60240d07dc93f",
+      "writers_sha256": "3da7f9495b61e24673bc2f17ae5b2de74d38e2fc0d6f8061ebbc026eb2cfc0c0",
+      "post_run_network_status_sha256": "05d513311c695e3cef0a5a834e59d87b81aea5135b68b0828dbe82daf40116c0",
+      "state_roots_sha256": "e901f49cb334744a7374c75b047bf0f7cc29c4047fe91eed2c12d82a491902c5",
+      "runner_profile_dir": "/tmp/and-live-274b-three-eu-runners-60k-60s/runner-profiles",
+      "runner_profile_snapshots": 75,
+      "status": "green under-driven",
+      "reason": "The run stayed clean and drained fully, but delivery plateaued well below 60k offered. Validators 1-2 were materially weaker than validators 3-4, so the 3-runner topology is still limiting load delivery even though chain correctness remained green.",
+      "endpoint_count": 12,
+      "measured_rps_total": 41635.1,
+      "ok_total": 2533272,
+      "committed_total": 2533272,
+      "committed_tps": 42221.2,
+      "rpc_err_total": 0,
+      "nonce_err_total": 0,
+      "net_err_total": 0,
+      "converged_height": 150,
+      "head_hash": "0x6c57187b8a9fabbbd0607144614648ef40517349bbaa85f5ee21162306de23ce",
+      "state_root_hex": "0x628d93538865009c366ecf065cfbb6b1622c81dd72e205ef7544ef9008b13156",
+      "validator_1_2_rps_band": {
+        "min": 2238.3,
+        "max": 2508.9
+      },
+      "validator_3_4_rps_band": {
+        "min": 4459.6,
+        "max": 4665.7
+      }
+    }
+  ],
+  "artifacts": [
+    "/tmp/and-live-274a-three-eu-runners-40k-60s",
+    "/tmp/and-live-274a-three-eu-runners-40k-60s/post-run-network-status.txt",
+    "/tmp/and-live-274a-three-eu-runners-40k-60s/state-roots-height-203.txt",
+    "/tmp/and-live-274a-three-eu-runners-40k-60s/runner-profiles",
+    "/tmp/and-live-274b-three-eu-runners-60k-60s",
+    "/tmp/and-live-274b-three-eu-runners-60k-60s/post-run-network-status.txt",
+    "/tmp/and-live-274b-three-eu-runners-60k-60s/state-roots-height-150.txt",
+    "/tmp/and-live-274b-three-eu-runners-60k-60s/runner-profiles"
+  ],
+  "runner_observations": [
+    "Removing root@203.0.113.11 immediately restored green throughput versus item 273: 274a produced 39,060.3 committed TPS at 40k offered instead of 28,237.2.",
+    "Both 274a and 274b captured substantial kombat_loadgen CPU burn in runner profile snapshots, confirming the runners were actively driving the ingress endpoints during the load window.",
+    "The 3-runner pool still creates a deterministic topology artifact because every :8645 ingress maps to root@203.0.113.12, every :8646 ingress maps to root@203.0.113.13, and every :8647 ingress maps to root@203.0.113.10.",
+    "274b no longer reproduced item 270b's validator-2 residual mahi_pre_admitted_pool tail. All validators converged, shared state root, and drained to zero after settle."
+  ],
+  "conclusion": "The recent live regression was primarily runner-side, not a proven node correctness issue. Excluding root@203.0.113.11 recovers a new green live TPS on current main, but the 3-runner topology is still under-driving offered load and should not be treated as the chain ceiling. The next rung should add a fourth dedicated EU runner and rerun the clean-reset ladder."
+}

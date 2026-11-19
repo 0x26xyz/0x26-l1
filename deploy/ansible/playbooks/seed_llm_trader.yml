@@ -1,0 +1,104 @@
+- name: Seed Kombat testnet LLM trader balance
+  hosts: validator-1
+  remote_user: root
+  gather_facts: false
+  become: false
+  vars:
+    validator_rpc_url: "http://127.0.0.1:{{ and_chain_validator_rpc_port }}"
+    seed_market_id: "{{ and_chain_llm_trader_market_id | default(7) }}"
+    seed_account_id: "{{ and_chain_llm_trader_account_id | default(270101) }}"
+    seed_evm_address_hex: "{{ and_chain_llm_trader_evm_address_hex | default('0x000000000000000000000000000000000041e1a5') }}"
+    # 10,000 USDC of policy balance (in micro-USDC).
+    seed_policy_usdc_micro: "{{ and_chain_llm_trader_seed_policy_usdc_micro | default('10000000000') }}"
+    # Isolated collateral on the trading market. Same scale as the MM taker
+    # bot's testnet seed (10^15 native units).
+    seed_isolated_collateral_micro: "{{ and_chain_llm_trader_seed_isolated_collateral_micro | default('1000000000000000') }}"
+    seed_timestamp_ms: "{{ ansible_date_time.epoch | default(lookup('pipe', 'date +%s')) | int * 1000 }}"
+
+  pre_tasks:
+    - name: Require operator token
+      ansible.builtin.assert:
+        that:
+          - and_chain_operator_token | length > 0
+        fail_msg: "Set KOMBAT_OPERATOR_TOKEN before running seed_llm_trader.yml."
+      run_once: true
+
+  tasks:
+    - name: Read llm-trader account
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_getAccount
+          params:
+            account_id: "{{ seed_account_id }}"
+          id: "get-llm-trader-account"
+        return_content: true
+        status_code: 200
+      register: llm_trader_account_read
+      run_once: true
+
+    - name: Assert llm-trader account exists with linked EVM address
+      ansible.builtin.assert:
+        that:
+          - llm_trader_account_read.json.result is not none
+          - llm_trader_account_read.json.result.evm_address_hex is not none
+          - llm_trader_account_read.json.result.evm_address_hex | lower == seed_evm_address_hex | lower
+        fail_msg: >
+          Account {{ seed_account_id }} either does not exist or has no
+          linked EVM address. Run deploy_llm_trader.yml first; it creates
+          the account with evm_address_hex.
+
+    - name: Seed llm-trader policy USDC balance
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        headers:
+          authorization: "Bearer {{ and_chain_operator_token }}"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_setPolicyUsdcBalance
+          params:
+            address_hex: "{{ seed_evm_address_hex }}"
+            amount: "{{ seed_policy_usdc_micro }}"
+          id: "seed-llm-trader-policy-usdc"
+        return_content: true
+        status_code: 200
+      register: policy_usdc_seed
+      run_once: true
+      failed_when:
+        - policy_usdc_seed.status != 200
+          or (policy_usdc_seed.json.error is defined and policy_usdc_seed.json.error is not none)
+
+    - name: Seed llm-trader isolated collateral on market
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        headers:
+          authorization: "Bearer {{ and_chain_operator_token }}"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_setIsolatedCollateral
+          params:
+            market_id: "{{ seed_market_id }}"
+            account_id: "{{ seed_account_id }}"
+            collateral: "{{ seed_isolated_collateral_micro }}"
+            timestamp_ms: "{{ seed_timestamp_ms }}"
+          id: "seed-llm-trader-collateral"
+        return_content: true
+        status_code: 200
+      register: collateral_seed
+      run_once: true
+      failed_when:
+        - collateral_seed.status != 200
+          or (collateral_seed.json.error is defined and collateral_seed.json.error is not none)
+
+    - name: Show seeded balances
+      ansible.builtin.debug:
+        msg:
+          - "policy_usdc_balance: {{ policy_usdc_seed.json.result | default('?') }}"
+          - "isolated_collateral: market={{ seed_market_id }} account={{ seed_account_id }} amount={{ seed_isolated_collateral_micro }} micro-USDC"

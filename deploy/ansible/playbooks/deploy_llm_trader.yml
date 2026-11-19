@@ -1,0 +1,249 @@
+- name: Deploy Kombat testnet LLM trader example agent
+  hosts: "{{ and_chain_llm_trader_hosts | default('loadgen-1') }}"
+  remote_user: root
+  gather_facts: true
+  become: true
+  vars:
+    llm_trader_service_name: "{{ and_chain_llm_trader_service_name | default('and-llm-trader') }}"
+    llm_trader_install_dir: "{{ and_chain_llm_trader_install_dir | default('/opt/and-chain/llm-trader') }}"
+    llm_trader_venv_dir: "{{ llm_trader_install_dir }}/.venv"
+    llm_trader_config_dir: "{{ and_chain_llm_trader_config_dir | default('/etc/and-chain') }}"
+    llm_trader_env_file: "{{ and_chain_llm_trader_env_file | default(llm_trader_config_dir ~ '/llm-trader.env') }}"
+    llm_trader_enabled: "{{ and_chain_llm_trader_enabled | default(true) | bool }}"
+    llm_trader_rpc_url: "{{ and_chain_llm_trader_rpc_url | default(and_chain_market_data_rpc_url | default('https://testnet.0x26.xyz/api')) }}"
+    llm_trader_chain_id: "{{ and_chain_chain_id | default(7) }}"
+    llm_trader_market_id: "{{ and_chain_llm_trader_market_id | default(7) }}"
+    llm_trader_account_id: "{{ and_chain_llm_trader_account_id | default(270101) }}"
+    llm_trader_policy_id: "{{ and_chain_llm_trader_policy_id | default(27010101) }}"
+    llm_trader_evm_address_hex: "{{ and_chain_llm_trader_evm_address_hex | default('0x000000000000000000000000000000000041e1a5') }}"
+    # Deterministic testnet-only owner/session keys. Override per-deploy via
+    # -e and_chain_llm_trader_owner_secret_hex=... for non-testnet runs.
+    llm_trader_owner_secret_hex: "{{ and_chain_llm_trader_owner_secret_hex | default('REDACTED_TESTNET_SECRET') }}"
+    llm_trader_session_secret_hex: "{{ and_chain_llm_trader_session_secret_hex | default('REDACTED_TESTNET_SECRET') }}"
+    llm_trader_code_hash_hex: "{{ and_chain_llm_trader_code_hash_hex | default('0x0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a') }}"
+    llm_trader_max_volume_per_day_usdc: "{{ and_chain_llm_trader_max_volume_per_day_usdc | default(5000) }}"
+    llm_trader_max_drawdown_bps: "{{ and_chain_llm_trader_max_drawdown_bps | default(500) }}"
+    llm_trader_max_intents_per_second: "{{ and_chain_llm_trader_max_intents_per_second | default(1) }}"
+    llm_trader_max_intents_per_day: "{{ and_chain_llm_trader_max_intents_per_day | default(1000) }}"
+    llm_trader_gas_budget_per_day_microusdc: "{{ and_chain_llm_trader_gas_budget_per_day_microusdc | default(10000000) }}"
+    llm_trader_gas_refill_per_day_microusdc: "{{ and_chain_llm_trader_gas_refill_per_day_microusdc | default(10000000) }}"
+    llm_trader_policy_ttl_ms: "{{ and_chain_llm_trader_policy_ttl_ms | default(604800000) }}"
+    llm_trader_max_trade_lots: "{{ and_chain_llm_trader_max_trade_lots | default(2) }}"
+    llm_trader_max_position_lots: "{{ and_chain_llm_trader_max_position_lots | default(10) }}"
+    llm_trader_poll_interval_s: "{{ and_chain_llm_trader_poll_interval_s | default(15) }}"
+    llm_trader_book_depth: "{{ and_chain_llm_trader_book_depth | default(5) }}"
+    llm_trader_event_window: "{{ and_chain_llm_trader_event_window | default(50) }}"
+    llm_trader_intent_ttl_ms: "{{ and_chain_llm_trader_intent_ttl_ms | default(30000) }}"
+    llm_trader_stale_pending_grace_ms: "{{ and_chain_llm_trader_stale_pending_grace_ms | default(120000) }}"
+    llm_trader_testnet_taker_cadence_enabled: "{{ and_chain_llm_trader_testnet_taker_cadence_enabled | default(false) }}"
+    llm_trader_testnet_taker_size_lots: "{{ and_chain_llm_trader_testnet_taker_size_lots | default(1) }}"
+    llm_trader_testnet_taker_every_n_holds: "{{ and_chain_llm_trader_testnet_taker_every_n_holds | default(1) }}"
+    llm_trader_log_level: "{{ and_chain_llm_trader_log_level | default('INFO') }}"
+    llm_trader_openrouter_model: "{{ and_chain_llm_trader_openrouter_model | default('deepseek/deepseek-chat') }}"
+    llm_trader_openrouter_api_key: "{{ lookup('env', 'OPENROUTER_API_KEY') }}"
+    llm_trader_run_dry_run: "{{ and_chain_llm_trader_dry_run | default(false) }}"
+    llm_trader_run_setup: "{{ and_chain_llm_trader_run_setup | default(true) }}"
+    llm_trader_run_fund: "{{ and_chain_llm_trader_run_fund | default(true) }}"
+    llm_trader_deposit_usdc: "{{ and_chain_llm_trader_deposit_usdc | default(2000) }}"
+    llm_trader_source_dir: "{{ playbook_dir }}/../../../examples/python/llm-trader"
+    llm_trader_sdk_package: "{{ and_chain_llm_trader_sdk_package | default('git+https://github.com/0x26xyz/0x26-python-sdk.git@v0.1.0') }}"
+
+  pre_tasks:
+    - name: Stop disabled LLM trader service
+      ansible.builtin.systemd_service:
+        name: "{{ llm_trader_service_name }}.service"
+        enabled: false
+        state: stopped
+        daemon_reload: true
+      failed_when: false
+      when: not llm_trader_enabled
+
+    - name: End disabled LLM trader play
+      ansible.builtin.meta: end_play
+      when: not llm_trader_enabled
+
+    - name: Require OPENROUTER_API_KEY in environment
+      ansible.builtin.assert:
+        that:
+          - llm_trader_openrouter_api_key | length > 0
+        fail_msg: "Set OPENROUTER_API_KEY in the environment before deploying the LLM trader."
+      run_once: true
+      delegate_to: localhost
+      become: false
+
+    - name: Require llm-trader source directory locally
+      ansible.builtin.stat:
+        path: "{{ llm_trader_source_dir }}/pyproject.toml"
+      delegate_to: localhost
+      become: false
+      register: local_llm_trader_source
+      run_once: true
+
+    - name: Assert llm-trader source is present
+      ansible.builtin.assert:
+        that:
+          - local_llm_trader_source.stat.exists
+        fail_msg: "Expected llm-trader at {{ llm_trader_source_dir }}; this playbook ships the in-repo example."
+      run_once: true
+
+    - name: Require deterministic owner/session secrets in inventory
+      ansible.builtin.assert:
+        that:
+          - llm_trader_owner_secret_hex | length == 64
+          - llm_trader_session_secret_hex | length == 64
+        fail_msg: >
+          Set and_chain_llm_trader_owner_secret_hex and
+          and_chain_llm_trader_session_secret_hex (32-byte hex, no 0x) in
+          inventory or via -e before deploying.
+
+  tasks:
+    - name: Ensure prerequisites (python venv + pip)
+      ansible.builtin.apt:
+        name:
+          - git
+          - python3
+          - python3-venv
+          - python3-pip
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Ensure llm-trader install and config directories exist
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: "{{ llm_trader_install_dir }}", mode: "0755" }
+        - { path: "{{ llm_trader_install_dir }}/llm-trader", mode: "0755" }
+        - { path: "{{ llm_trader_config_dir }}", mode: "0755" }
+
+    - name: Stage llm-trader source on host
+      ansible.builtin.copy:
+        src: "{{ llm_trader_source_dir }}/"
+        dest: "{{ llm_trader_install_dir }}/llm-trader/"
+        owner: root
+        group: root
+        mode: preserve
+      register: trader_sync
+
+    - name: Strip pycache from staged sources
+      ansible.builtin.shell: |
+        find {{ llm_trader_install_dir }}/llm-trader \
+          -type d \( -name __pycache__ -o -name '*.egg-info' \) -prune -exec rm -rf {} + || true
+      changed_when: false
+
+    - name: Create Python virtualenv
+      ansible.builtin.command:
+        cmd: "python3 -m venv {{ llm_trader_venv_dir }}"
+        creates: "{{ llm_trader_venv_dir }}/bin/python"
+
+    - name: Upgrade pip in venv
+      ansible.builtin.command:
+        cmd: "{{ llm_trader_venv_dir }}/bin/python -m pip install --upgrade pip setuptools wheel"
+      register: pip_upgrade
+      changed_when: "'Successfully installed' in pip_upgrade.stdout"
+
+    - name: Install and-chain-sdk into venv
+      ansible.builtin.command:
+        cmd: "{{ llm_trader_venv_dir }}/bin/python -m pip install {{ llm_trader_sdk_package }}"
+      register: sdk_install
+      changed_when: "'Successfully installed' in sdk_install.stdout"
+
+    - name: Install and-llm-trader into venv
+      ansible.builtin.command:
+        cmd: "{{ llm_trader_venv_dir }}/bin/python -m pip install -e {{ llm_trader_install_dir }}/llm-trader"
+      register: trader_install
+      changed_when: "'Successfully installed' in trader_install.stdout"
+
+    - name: Install llm-trader environment file
+      ansible.builtin.template:
+        src: ../templates/llm-trader.env.j2
+        dest: "{{ llm_trader_env_file }}"
+        owner: root
+        group: root
+        mode: "0600"
+      register: env_file
+
+    - name: Bootstrap account + policy on chain (idempotent)
+      when: llm_trader_run_setup | bool
+      ansible.builtin.command:
+        cmd: "{{ llm_trader_venv_dir }}/bin/and-llm-trader setup"
+      environment:
+        AND_RPC_URL: "{{ llm_trader_rpc_url }}"
+        AND_OWNER_SECRET_HEX: "{{ llm_trader_owner_secret_hex }}"
+        AND_SESSION_SECRET_HEX: "{{ llm_trader_session_secret_hex }}"
+        AND_ACCOUNT_ID: "{{ llm_trader_account_id }}"
+        AND_POLICY_ID: "{{ llm_trader_policy_id }}"
+        AND_CODE_HASH_HEX: "{{ llm_trader_code_hash_hex }}"
+        AND_MAX_VOLUME_PER_DAY_USDC: "{{ llm_trader_max_volume_per_day_usdc }}"
+        AND_MAX_DRAWDOWN_BPS: "{{ llm_trader_max_drawdown_bps }}"
+        AND_MAX_INTENTS_PER_SECOND: "{{ llm_trader_max_intents_per_second }}"
+        AND_MAX_INTENTS_PER_DAY: "{{ llm_trader_max_intents_per_day }}"
+        AND_GAS_BUDGET_PER_DAY_MICROUSDC: "{{ llm_trader_gas_budget_per_day_microusdc }}"
+        AND_GAS_REFILL_PER_DAY_MICROUSDC: "{{ llm_trader_gas_refill_per_day_microusdc }}"
+        AND_POLICY_TTL_MS: "{{ llm_trader_policy_ttl_ms }}"
+        AND_EVM_ADDRESS_HEX: "{{ llm_trader_evm_address_hex }}"
+      register: setup_result
+      changed_when: "'minting policy' in setup_result.stdout or 'creating account' in setup_result.stdout"
+
+    - name: Show setup output
+      ansible.builtin.debug:
+        var: setup_result.stdout_lines
+      when: llm_trader_run_setup | bool
+
+    - name: Deposit collateral via deposit_collateral intent (idempotent)
+      when: llm_trader_run_fund | bool
+      ansible.builtin.command:
+        cmd: "{{ llm_trader_venv_dir }}/bin/and-llm-trader fund"
+      environment:
+        AND_RPC_URL: "{{ llm_trader_rpc_url }}"
+        AND_SESSION_SECRET_HEX: "{{ llm_trader_session_secret_hex }}"
+        AND_CHAIN_ID: "{{ llm_trader_chain_id }}"
+        AND_MARKET_ID: "{{ llm_trader_market_id }}"
+        AND_ACCOUNT_ID: "{{ llm_trader_account_id }}"
+        AND_POLICY_ID: "{{ llm_trader_policy_id }}"
+        AND_DEPOSIT_USDC: "{{ llm_trader_deposit_usdc }}"
+        AND_INTENT_TTL_MS: "{{ llm_trader_intent_ttl_ms }}"
+      register: fund_result
+      changed_when: "'deposited' in fund_result.stderr"
+
+    - name: Show fund output
+      ansible.builtin.debug:
+        var: fund_result.stderr_lines
+      when: llm_trader_run_fund | bool
+
+    - name: Install llm-trader systemd unit
+      ansible.builtin.template:
+        src: ../templates/llm-trader.service.j2
+        dest: "/etc/systemd/system/{{ llm_trader_service_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      register: unit_file
+
+    - name: Enable and (re)start llm-trader service
+      ansible.builtin.systemd_service:
+        name: "{{ llm_trader_service_name }}.service"
+        daemon_reload: true
+        enabled: true
+        state: restarted
+
+    - name: Check llm-trader service status
+      ansible.builtin.command:
+        cmd: "systemctl is-active {{ llm_trader_service_name }}.service"
+      register: service_status
+      changed_when: false
+      failed_when: service_status.stdout.strip() != "active"
+
+    - name: Tail recent journal output
+      ansible.builtin.command:
+        cmd: "journalctl -u {{ llm_trader_service_name }}.service -n 30 --no-pager"
+      register: journal_tail
+      changed_when: false
+
+    - name: Show recent journal output
+      ansible.builtin.debug:
+        var: journal_tail.stdout_lines

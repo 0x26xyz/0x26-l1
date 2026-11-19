@@ -1,0 +1,32 @@
+- import_playbook: deploy.yml
+  vars:
+    # Install the quiesced reset config without starting services. A full reset
+    # must still be able to wipe state when the existing redb backend cannot
+    # hydrate under the current binary.
+    and_chain_auto_network_round_enabled: false
+    and_chain_deploy_serial: "{{ and_chain_reset_quiesce_deploy_serial | default(4) }}"
+    and_chain_restart_services: false
+- import_playbook: set_local_bridge_mutations.yml
+  vars:
+    and_chain_local_bridge_mutations_enabled_override: true
+    and_chain_local_bridge_restart_mode: none
+- import_playbook: reset_state.yml
+  vars:
+    and_chain_reset_start_non_bootstrap_validators: false
+    and_chain_reset_start_ingress_services: false
+- import_playbook: seed_initial_state.yml
+  vars:
+    and_chain_seed_initial_state_hosts: "{{ and_chain_reset_bootstrap_validator_host | default('validator-1') }}"
+    and_chain_seed_real_capital_demo_bootstrap_open_enabled: false
+- import_playbook: set_local_bridge_mutations.yml
+  vars:
+    and_chain_local_bridge_mutations_enabled_override: false
+    and_chain_local_bridge_restart_mode: none
+- import_playbook: restart_bootstrap_from_seed_snapshot.yml
+- import_playbook: start_non_bootstrap_validators_and_ingress.yml
+- import_playbook: deploy.yml
+  vars:
+    and_chain_auto_network_round_enabled: "{{ and_chain_reset_start_auto_network_after_seed | default(true) }}"
+    and_chain_deploy_serial: "{{ and_chain_reset_enable_deploy_serial | default(4) }}"
+- import_playbook: seed_real_capital_demo_post_cluster.yml
+- import_playbook: verify.yml

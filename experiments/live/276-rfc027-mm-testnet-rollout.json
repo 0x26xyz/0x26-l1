@@ -1,0 +1,812 @@
+{
+  "id": 276,
+  "title": "RFC027 real market-maker bot testnet rollout and MAHI stale-replace hardening",
+  "date": "2026-05-02",
+  "status": "kept diagnostic; clean reset completed; local bridge mutators fail closed by default; public faucet is consensus-carried; browser activation uses EVM-wallet owner calls; RFC027 Rust MM is running; public SDK acceptance proves account/faucet/policy/deposit/trade/risk/candle flow on reset testnet; Python LLM taker fleet is redeployed from ignored Ansible secret env and submitting IOC taker intents",
+  "history_ingested": {
+    "live_entries": "245-276",
+    "local_entries": "266-267",
+    "non_json_entries": [
+      "chain/experiments/live/252-six-ingress-topology.vars.yml",
+      "chain/experiments/live/260-packed-v4-on-v3-hosts.txt"
+    ],
+    "summary": "The full chain/experiments ledger was re-ingested before continuing the RFC027 MM/taker rollout. The ledger is a numbered sequence focused on reproducible testnet deployments, exact binary hashes, topology, observed failures, and kept/binned conclusions. Items 245-265 establish that submitted/accepted request counts are not enough; common-height block/state roots, drained MAHI queues, and host/topology controls are the correctness gates. Items 266-267 show local live-flag mismatches can create misleading failures. Items 270-275 establish the current four-validator testnet context, runner topology, green floor, and known MAHI/ingress-tail sensitivity. Item 276 records the RFC027 live rollout and must keep distinguishing bot submission, committed state-root convergence, runtime event/trade-history visibility, and market-data ingestion."
+  },
+  "cross_experiment_guardrails": {
+    "source": "chain/experiments/live/245-276 plus chain/experiments/local/266-267",
+    "rules": [
+      "Do not treat zero RPC, nonce, or network errors as a green result without common-height committed state-root agreement and drained MAHI submit queues.",
+      "Do not treat submitted bot intents as executed trades; verify policy nonce movement, order status, trade history or runtime events, and market-data candles.",
+      "Do not tune consensus from local harnesses unless the live MAHI flags match; item266 is the local liveflags green baseline and item267 is the warning record.",
+      "Do not compare performance or liveness across runs without a clean reset, exact binary hash, and controlled topology.",
+      "Do not use local bridge mutators on a running validator set; reset/bootstrap-only local mutation is the only allowed testnet exception.",
+      "Do not confuse committed state-root convergence with runtime-event/read-model convergence. Trade history and candles are derived from event/read-model paths and need separate verification."
+    ],
+    "current_rfc027_diagnostic_note": "A 2026-05-03 live sample after the latest redeploy showed all four validators reporting committed_state_root_hex=0x0426d3e6da0b7d71c900360d4a683d968b98d125e03350f77b5e60ff17f477af while direct kombat_getTradeHistory returned fills only on validator-1 for markets 7-11. That means the next investigation should isolate runtime event/trade-history visibility and market-data ingestion before making further bot-sizing or consensus-topology changes."
+  },
+  "code_commit_base": "e787da1f3686296ebc2b0536a7a94da2f82f4a5d",
+  "working_tree": {
+    "dirty": true,
+    "reason": "RFC027 market-maker, SDK, deployment, and MAHI payload-filter changes were built and deployed from the working tree before commit.",
+    "core_chain_files": [
+      "chain/crates/node/src/lib.rs",
+      "chain/crates/node/src/engine_handle.rs",
+      "chain/crates/node/src/execution/mod.rs",
+      "chain/crates/consensus/src/lib.rs",
+      "chain/crates/consensus/src/mahi/mod.rs",
+      "chain/crates/execution/src/lib.rs",
+      "chain/crates/policy/src/lib.rs",
+      "chain/crates/rpc/src/lib.rs"
+    ],
+    "bot_and_sdk_files": [
+      "chain/crates/loadgen/src/bin/kombat_mm_bot.rs",
+      "chain/crates/loadgen/Cargo.toml",
+      "chain/crates/sdk/src/market_maker.rs",
+      "chain/crates/sdk/src/lib.rs",
+      "chain/crates/sdk/tests/wire_compat.rs",
+      "chain/sdk/ts/src/client.ts",
+      "chain/sdk/ts/src/index.ts",
+      "chain/sdk/python/and_chain_sdk/client.py",
+      "chain/sdk/python/and_chain_sdk/models.py",
+      "chain/sdk/python/and_chain_sdk/__init__.py",
+      "chain/sdk/python/tests/test_client.py",
+      "chain/sdk/python/README.md",
+      "chain/examples/python/llm-trader/llm_trader/agent.py",
+      "chain/examples/python/llm-trader/llm_trader/__main__.py",
+      "chain/examples/python/llm-trader/tests/test_agent.py"
+    ],
+    "deployment_files": [
+      "chain/deploy/ansible/inventory/group_vars/kombat_live_testnet.yml",
+      "chain/deploy/ansible/inventory/group_vars/kombat_loadgen.yml",
+      "chain/deploy/ansible/playbooks/deploy_perps_demo_liquidity_bot.yml",
+      "chain/deploy/ansible/playbooks/deploy_llm_trader.yml",
+      "chain/deploy/ansible/templates/llm-trader.env.j2",
+      "chain/deploy/ansible/templates/kombat-perps-demo-liquidity-bot.service.j2",
+      "chain/scripts/build_linux_binaries.sh"
+    ],
+    "docs": [
+      "docs/v1/rfcs/027-formal-market-maker-program.md",
+      "docs/v1/rfcs/041-agent-bootstrap.md",
+      "docs/v1/06-policies.md",
+      "docs/docs-site/docs/getting-started/testnet.md",
+      "docs/docs-site/docs/rpc/accounts.md",
+      "docs/docs-site/docs/rpc/intents.md",
+      "docs/docs-site/docs/rpc/policies.md",
+      "docs/docs-site/docs/reference/wire-format.md",
+      "docs/site/index.html"
+    ],
+    "ui_files": [
+      "perps-dex-ui/src/LiveTradingViewChart.tsx",
+      "perps-dex-ui/src/App.tsx",
+      "perps-dex-ui/src/browserSigning.ts"
+    ]
+  },
+  "validator_binary_sha256": "2f9cc6c419d52a415e1eef779187b742e84be23c3767c960a5c05b50176a2292",
+  "market_data_binary_sha256": "a83e86408899940a1a8a5ff4d08bdce4292389e6d6f7ee4b2cbd7f82d733a727",
+  "market_maker_binary_sha256": "ee5da796eeb3b09c54a6067bb0f0236dcd2146bf4d940a9b7e4c6fc85380d8ec",
+  "inventory": "chain/deploy/ansible/inventory/testnet.yml",
+  "topology": {
+    "validators": [
+      "validator-1 root@203.0.113.15",
+      "validator-2 root@203.0.113.17",
+      "validator-3 root@203.0.113.14",
+      "validator-4 root@203.0.113.16"
+    ],
+    "market_maker_host": "root@203.0.113.10",
+    "public_rpc": "https://testnet.0x26.xyz/api",
+    "bot_rpc": "http://203.0.113.15:8545"
+  },
+  "rfc027_program": {
+    "program_id_hex": "0xbee5dda783476aa27711bb638f5b37aee740c2517d0e9b798b277b58a7394aa6",
+    "market_maker_account": 260001,
+    "markets": [
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "liquidity_configuration": {
+      "levels_per_side": 10,
+      "lanes": 100,
+      "quote_concurrency": 20,
+      "base_quantity_lots": 15000000,
+      "level_growth_bps": 2500,
+      "spread_bps": 5,
+      "step_bps": 5
+    },
+    "funding_note": "The MM account was funded during reset/seed with the intended multi-million USDC policy balance and RFC027 enrollment bond coverage. The active bot reports successful program enrollment at startup."
+  },
+  "core_chain_change": {
+    "problem": "The real MM can naturally submit stale replace/cancel payloads when a previous replacement already executed or a lane reconciles late. Before this item, a stale replace in a MAHI payload could make merged MAHI execution fail with Order(UnknownRestingOrder), causing the same committed payload set to be retried and logging a block-execution failure loop.",
+    "fix": "Added a MAHI committed-payload prefilter in SingleNodeEngine so non-transient invalid preverified intents are converted into deterministic RejectedIntent records instead of making the MAHI block invalid. Later same-policy payload intents after a rejected predecessor are rejected as PredecessorIntentRejected. Single and merged MAHI execution now install those rejected intents alongside successfully applied payloads.",
+    "consensus_rationale": "The filter runs during deterministic block replay against current committed state, so proposer/follower nodes reject the same stale payloads and keep the block/state-root path live rather than wedging on an execution error.",
+    "regression_test": "mahi_merged_stale_replace_payload_rejects_without_block_failure"
+  },
+  "local_bridge_hardening": {
+    "problem": "During the live rollout, policy-USDC and isolated-collateral bridge RPCs were used as a funding shortcut on a running four-validator network. Those methods mutate local committed state outside block consensus and caused validator head/state-root divergence.",
+    "fix": "The public JSON-RPC bridge mutators kombat_setPolicyUsdcBalance, kombat_setEvmUsdcMinter, and kombat_setIsolatedCollateral now reject by default with local_bridge_mutations_disabled unless KOMBAT_LOCAL_BRIDGE_MUTATIONS_ENABLED=1 is explicitly set.",
+    "deployment_rule": "Reset automation may enable the flag only while seeding the bootstrap validator before the remaining validators join from that seeded snapshot. The flag is disabled again before public runtime.",
+    "regression_test": "local_bridge_mutation_rpcs_are_disabled_by_default"
+  },
+  "consensus_faucet_followup": {
+    "problem": "Disabling kombat_faucetFundAccount together with the bridge mutators broke the public account onboarding flow; users could create/link accounts but had no consensus-safe way to fund them.",
+    "fix": "Added BlockItem::Faucet and MahiBlock faucet payloads. kombat_faucetFundAccount now rate-limits the request, queues a pending faucet grant, waits for normal block/MAHI replay to commit, and returns the committed policy/EVM USDC balances. The grant updates policy balance, EVM USDC balance, and EVM USDC total supply through apply_committed_state_updates, so proposer/follower replay includes the funding in state_root.",
+    "ui_followup": "The marketing site and perps UI faucet buttons call the public consensus-carried faucet again instead of showing the paused-faucet state.",
+    "regression_tests": [
+      "json_rpc_faucet_waits_for_consensus_block_item",
+      "json_rpc_faucet_enforces_limiter",
+      "external_block_applies_consensus_faucet_item",
+      "local_bridge_mutation_rpcs_are_disabled_by_default"
+    ]
+  },
+  "evm_wallet_owner_call_followup": {
+    "problem": "The perps activation modal still required users to paste an account-owner private key to create a trading policy. That is wrong for browser wallet users and conflicts with the intended wallet onboarding flow.",
+    "fix": "Added kombat_submitEvmOwnerCall beside the existing Ed25519 kombat_submitOwnerCall. Wallet-owned accounts use a deterministic owner principal derived from the linked EVM address; RPC verifies an EIP-712 EvmOwnerCall signature recovered to that linked wallet, then applies the same owner-call state transition. Ed25519 owner calls remain intact for bots and operator tooling. The perps UI now creates wallet-owned accounts, funds them through the consensus faucet, and asks the connected wallet to sign policy creation instead of asking for an owner private key.",
+    "consensus_rationale": "This is an authorization-layer extension over existing owner-call mutations, not a change to policy/session semantics. Both owner modes mint identical policy records and keep Ed25519 session keys for fast intent signing.",
+    "regression_tests": [
+      "json_rpc_submit_evm_owner_call_creates_policy_for_wallet_owned_account",
+      "npm run build in perps-dex-ui"
+    ]
+  },
+  "bot_change": {
+    "implementation": "Rust kombat_mm_bot, not the previous shell stopgap.",
+    "changes": [
+      "Bounded concurrent quoting across independent nonce lanes via KOMBAT_MM_BOT_QUOTE_CONCURRENCY.",
+      "Per-failure lane reconciliation refreshes current resting order state before the next replacement attempt.",
+      "Detailed JSON-RPC error data is logged for stale nonce, rejection, and timeout diagnosis.",
+      "Post-only replacement prices are clamped against top-of-book snapshots so bids stay below the best ask and asks stay above the best bid when the mark lags the book."
+    ]
+  },
+  "llm_trader_chart_candle_change": {
+    "problem": "The order book had live RFC027 maker liquidity, but the chart could still be empty because candles are built from taker match_filled events and the deployed LLM trader was repeatedly deciding hold.",
+    "fix": "Added an explicit testnet-only taker cadence to the Python llm-trader. When AND_TESTNET_TAKER_CADENCE_ENABLED=1 and the model returns hold, it submits a tiny IOC order at the current touch, alternates buy/sell, and stays bounded by local max trade/max position plus the on-chain policy.",
+    "deployment": {
+      "service": "and-llm-trader",
+      "host": "root@203.0.113.10",
+      "market_id": 7,
+      "account_id": 270101,
+      "policy_id": 27010101,
+      "enabled_env": {
+        "AND_TESTNET_TAKER_CADENCE_ENABLED": "1",
+        "AND_TESTNET_TAKER_SIZE_LOTS": "1",
+        "AND_TESTNET_TAKER_EVERY_N_HOLDS": "1"
+      }
+    },
+    "regression_test": "PYTHONPATH=chain/examples/python/llm-trader:chain/sdk/python python3 -m unittest discover -s chain/examples/python/llm-trader/tests"
+  },
+  "ui_chart_change": {
+    "problem": "The market-data service stores candle buckets using deterministic chain event timestamps. TradingView requests wall-clock ranges, so a wall-clock getBars request can return no rows even when market-data has valid chain-time candles.",
+    "fix": "LiveTradingViewChart now retries empty wall-clock candle queries against the full chain-time range and shifts chain-time bars/live taker fills onto the current wall-clock bucket before handing them to TradingView.",
+    "deployment": {
+      "image": "sonatribe/and-dex-ui:0.1.6",
+      "rollout": "deployment and-dex-ui successfully rolled out",
+      "served_asset": "/assets/index-CjCYLu0m.js"
+    }
+  },
+  "ui_request_storm_followup": {
+    "problem": "TradingView repeatedly requested old wall-clock candle ranges; the first UI fallback queried the full chain-time candle range on each empty response, doubling the request load and producing a visible /api/market-data/candles request storm.",
+    "fix": "LiveTradingViewChart now learns a chain-time to wall-clock offset once, maps subsequent requested wall-clock ranges back into chain-time ranges, filters returned bars to the visible wall-clock range, and only performs the full-history bootstrap before the offset is known.",
+    "deployment": {
+      "image": "sonatribe/and-dex-ui:0.1.7",
+      "served_asset": "/assets/index-vM6Ui6Rk.js"
+    }
+  },
+  "llm_trader_followup": {
+    "problem": "The Python test taker accepted submissions with pending_reason=stale_market_data and then immediately advanced local position/client state, causing repeated submissions while the policy nonce had not advanced.",
+    "fix": "The agent now records the submitted nonce as pending, skips further submissions until the on-chain policy nonce advances, and logs structured JSON-RPC error code/data for failed submissions. Fleet deployment disables the old fund command because deterministic reset seeding owns collateral."
+  },
+  "live_divergence_2026_05_03": {
+    "cause": "Manual local bridge funding was attempted on the already-running live validator set while diagnosing missing non-BTC candles.",
+    "observed_heads": [
+      {
+        "host": "203.0.113.15",
+        "head_height": 5423,
+        "committed_state_root_hex": "0xf28c..."
+      },
+      {
+        "host": "203.0.113.17",
+        "head_height": 5422,
+        "committed_state_root_hex": "0xaec7..."
+      },
+      {
+        "host": "203.0.113.14",
+        "head_height": 5422,
+        "committed_state_root_hex": "0xaec7..."
+      },
+      {
+        "host": "203.0.113.16",
+        "head_height": 5422,
+        "committed_state_root_hex": "0xaec7..."
+      }
+    ],
+    "decision": "Do not keep patching the live state. Rebuild, deploy, wipe state, seed bootstrap deterministically with local bridge mutations temporarily enabled, disable the bridge, then start the remaining validators and bot fleet."
+  },
+  "reset_attempt_2026_05_03": {
+    "chain_binary_deploy": "deploy.yml installed validator binary 5b41bcdf83fa4a9d92321d6a5dc3e437676bb52568a4ff69b49ec8b58f4e64cd and restarted validator/ingress services on all four validators.",
+    "reset_result": "reset_seed_and_start_perps_demo.yml wiped QuestDB and chain state, started only validator-1 for bootstrap seeding, then failed during kombat_createAccount because create-account fanout still targeted stopped validators 2-4.",
+    "fix": "seed_initial_state.yml now sends x-and-network-relay: create-account for bootstrap seed account-creation calls so the bootstrap-only seeding phase mutates validator-1 locally before snapshotting, instead of attempting legacy network fanout."
+  },
+  "reset_success_2026_05_03": {
+    "reset_result": "reset_seed_and_start_perps_demo.yml completed after the bootstrap create-account fanout fix. Chain state, QuestDB candles, and faucet Redis limiter keys were wiped before seeding.",
+    "redis_faucet_limiter": "cleared 3 faucet limiter keys",
+    "validator_convergence": {
+      "validators": 4,
+      "head_height": 323,
+      "committed_state_root_hex": "0x2906cd57561e4ad0f2c2000c4a733ecdb18117446bc6585c4ab09d6d1b88429c"
+    },
+    "runtime_bridge_gate": "Public kombat_setPolicyUsdcBalance rejected with local_bridge_mutations_disabled after reset, confirming the bootstrap-only bridge flag was disabled again.",
+    "mm_runtime": "kombat-perps-demo-liquidity-bot is active, enrolled RFC027 program 0xbee5dda783476aa27711bb638f5b37aee740c2517d0e9b798b277b58a7394aa6 for maker 260001 across markets [7,8,9,10,11], and quotes 10 levels per side with 15,000,000 base lots.",
+    "llm_taker_fleet": "deploy_llm_trader_fleet.yml completed successfully; and-llm-trader, and-llm-trader-eth, and-llm-trader-sol, and-llm-trader-doge, and-llm-trader-xrp are active and policies 27010101-27010501 are active.",
+    "candle_verification": [
+      "market 7 returned 1m candles with volume_lots=18 and trade_count=18 in the latest bucket sampled",
+      "market 8 returned 1m candles with volume_lots=19 and trade_count=19 in the latest bucket sampled",
+      "market 9 returned 1m candles with volume_lots=13 and trade_count=13 in the latest bucket sampled"
+    ]
+  },
+  "perps_ui_wallet_activation_followup_2026_05_03": {
+    "deployments": [
+      "sonatribe/and-dex-ui:0.1.10 fixed structured error rendering so wallet/RPC objects no longer display as [object Object]",
+      "sonatribe/and-dex-ui:0.1.11 added wallet_switchEthereumChain / wallet_addEthereumChain before EIP-712 signing and removed document-level scrollbars",
+      "sonatribe/and-dex-ui:0.1.12 added the build tag to the bottom status bar and compressed the ticket sidebar",
+      "sonatribe/and-dex-ui:0.1.13 corrected wallet_addEthereumChain rpcUrls to https://testnet.0x26.xyz/api, which returns eth_chainId=0x7",
+      "sonatribe/and-dex-ui:0.1.14 changed the completed activation primary action from inert Activated to Continue",
+      "sonatribe/and-dex-ui:0.1.15 simplified the account sidebar metrics and made activation wait for collateral visibility after submitting the deposit intent",
+      "sonatribe/and-dex-ui:0.1.16 relaxed ticket/sidebar spacing and attempted readable account metric rows/actions",
+      "sonatribe/and-dex-ui:0.1.17 fixed account metric selector precedence after the first relaxed layout still collapsed horizontally",
+      "sonatribe/and-dex-ui:0.1.18 added kombat_getIntentStatus polling to activation deposits so accepted/queued intents are not reported as executed",
+      "sonatribe/and-dex-ui:0.1.19 removed the old generic account-box span/b styling from the account panel and expanded metrics to full-width 44px rows"
+    ],
+    "served_assets": {
+      "javascript": "/assets/index-CvahS7uL.js",
+      "css": "/assets/index-BBWjv07L.css"
+    },
+    "served_bundle_checks": [
+      "served JS contains UI version 0.1.19",
+      "served JS contains wallet_switchEthereumChain and https://testnet.0x26.xyz/api",
+      "served JS contains getIntentStatus, Deposit submitted, and Deposit executed",
+      "served CSS contains .ticket-account-box .ticket-account-metrics and min-height:44px",
+      "served CSS no longer contains generic ticket-account-box span / ticket-account-box b selectors or overflow:auto / height:100vh scroll declarations"
+    ],
+    "faucet_limiter_resets": [
+      "reset_faucet_limiter.yml cleared 2 faucet limiter keys before the 0.1.16 rollout verification",
+      "reset_faucet_limiter.yml cleared 2 faucet limiter keys before the 0.1.19 rollout verification"
+    ]
+  },
+  "risk_summary_collateral_read_model_fix_2026_05_03": {
+    "problem": "Browser activation deposits were executing and emitting collateral_deposited/risk_state_updated events, but kombat_getAccountTradingState and kombat_getAccountRiskSummary still returned total_collateral=0 for accounts with isolated collateral but no open position. The UI therefore continued to show Deposit collateral required even after a successful deposit.",
+    "live_evidence": {
+      "account_id": 1777804793508246,
+      "market_id": 7,
+      "latest_collateral_event": {
+        "seq": 17611,
+        "block_height": 3725,
+        "amount_usdc": "20000000",
+        "collateral": "145000000"
+      },
+      "stale_read_before_fix": "kombat_getAccountTradingState and kombat_getAccountRiskSummary returned total_collateral=0 for the same account/market because list_risk_snapshots was sourced only from non-flat positions."
+    },
+    "fix": "SingleNodeEngine now exposes risk_positions(account_id, include_flat, limit), the union of non-flat positions plus isolated-collateral, bad-debt, under-maintenance, and liquidation-escalation keys. NodeRpcService::list_risk_snapshots uses risk_positions instead of positions so collateral-only flat accounts are included in risk summaries and account trading state.",
+    "regression_test": "cargo test -p kombat-chain-rpc node_rpc_risk_summary_includes_collateral_only_market --manifest-path chain/Cargo.toml",
+    "deployment_status": "pending validator binary rebuild and live rollout"
+  },
+  "python_sdk_public_edge_user_agent_fix_2026_05_03": {
+    "problem": "The acceptance script fell back to raw urllib for faucet/trading-state/candle calls because the Python SDK did not expose typed helpers for those endpoints. Public edge rejected Python's default urllib user agent with HTTP 403 error code 1010 before the request reached JSON-RPC.",
+    "fix": "Add Python SDK helpers for faucet_fund_account, get_wallet_balances, get_account_trading_state, get_candles, and get_market_data_candles. The SDK path consistently sends the stable and-chain-sdk-python/0.1 user agent for JSON-RPC and market-data REST requests.",
+    "developer_impact": "Agent and bot developers can use the SDK for the full account/faucet/deposit/trade verification path without needing ad-hoc urllib calls or manual user-agent headers.",
+    "regression_tests": [
+      "python3 -m unittest discover -s chain/sdk/python/tests -v"
+    ],
+    "validation_status": "local Python SDK tests passed; pending live acceptance rerun using only SDK helpers."
+  },
+  "leader_forwarding_one_round_lag_fix_2026_05_03": {
+    "problem": "After faucet, policy creation, and collateral deposit succeeded on public RPC, a market order failed with JSON-RPC error -32000: leader forwarding retry failed: current leader 0x0303... is stale at round 2565 (local round 2566). A one-round skew between submitter and target leader is normal during MAHI round advancement and should not fail the public write path.",
+    "fix": "Allow a one-round tolerance when preflighting the current leader's /network/bootstrap round before forwarding a public write. Leaders lagging by more than the tolerance still fail as stale.",
+    "consensus_rationale": "Forwarding only chooses the admission endpoint; block replay remains authoritative. A one-round lag tolerance avoids false-negative public writes during normal round skew without accepting materially stale leaders.",
+    "regression_tests": [
+      "cargo test -p kombat-chain-rpc json_rpc_submit_intent_forwards_to_leader_one_round_behind --manifest-path chain/Cargo.toml -- --nocapture"
+    ],
+    "validation_status": "documented before deployment; local fmt/build/test already passed; pending redeploy and live account/faucet/deposit/trade acceptance rerun."
+  },
+  "initial_margin_tick_lot_scaling_fix_2026_05_03": {
+    "problem": "After reset, a public SDK acceptance run could create an account, faucet fund it, create a policy, and deposit collateral, but even a 1-lot BTC market order was committed as intent_rejected with rejection_reason=internal_error. The underlying guard compared raw price_ticks * quantity_lots against micro-USDC collateral when reserving initial margin, instead of first scaling by the market's tick_size_bps and lot_size_microunits.",
+    "fix": "Scale initial-margin notional through scaled_raw_tick_lot_notional_usdc before comparing the required initial margin against isolated collateral. This aligns the order-placement margin guard with fill notional, policy notional, and the live market tick/lot configuration.",
+    "consensus_rationale": "The fix runs inside deterministic intent replay. Every validator computes the same scaled notional from committed market config, mark price, order book, and intent body, so this changes admission correctness without introducing proposer-local state.",
+    "regression_tests": [
+      "cargo test -p kombat-chain-node single_node_engine_scales_initial_margin_notional_for_live_tick_lot_config --manifest-path chain/Cargo.toml -- --nocapture"
+    ],
+    "validation_status": "rustfmt and the targeted node regression test passed locally. Linux rebuild completed with validator_binary_sha256=717fdff56d2b86703ecce73d200673b6e365747f2fceb34c75db4884de827dfa and market_maker_binary_sha256=ee5da796eeb3b09c54a6067bb0f0236dcd2146bf4d940a9b7e4c6fc85380d8ec; pending redeploy/reset and live account/faucet/deposit/trade acceptance rerun."
+  },
+  "deployment_wall_clock_block_timestamp_fix_2026_05_03": {
+    "problem": "After the corrected validator binary was deployed and reset, the public SDK flow reached a real BTC fill, and QuestDB stored a 1m candle. The chart still saw no candles because reset/bootstrap block timestamps were fixed at 1100/1200ms, so committed fill events bucketed at timestamp_ms=60000 while the UI requested wall-clock ranges around the current epoch.",
+    "fix": "Changed live-testnet Ansible defaults so KOMBAT_BOOTSTRAP_EMPTY_BLOCK_TIMESTAMP_MS, KOMBAT_GENESIS_TIMESTAMP_MS, and and_chain_seed_timestamp_ms are derived from the controller wall clock at reset time, with explicit env overrides still supported. This keeps committed fill-event timestamps in the same epoch-ms domain as the UI and market-data candle queries.",
+    "consensus_rationale": "The timestamp is still part of committed block data and is identical across validators because it is written into the deployed validator env / seed playbook before reset. This changes live-testnet deployment configuration, not per-validator runtime clock reads during replay.",
+    "validation_status": "Ansible syntax check passed before deploy. deploy.yml installed validator_binary_sha256=717fdff56d2b86703ecce73d200673b6e365747f2fceb34c75db4884de827dfa on all four validators. reset_seed_and_start_perps_demo.yml completed, and the public SDK acceptance run produced a wall-clock QuestDB candle for fill event seq 1755 at timestamp_ms=1777818960000."
+  },
+  "risk_snapshot_tick_lot_scaling_fix_2026_05_03": {
+    "problem": "After the public acceptance flow filled a 1-lot BTC taker order and a wall-clock candle appeared, kombat_getAccountRiskSummary still reported the account under maintenance with multi-thousand-USDC negative equity. The remaining risk path scaled initial-margin admission but still used raw tick-lot values for maintenance requirement and realized/unrealized PnL in margin snapshots and leverage checks.",
+    "fix": "Scale ledger mark notional plus realized/unrealized raw tick-lot PnL through the same market tick_size_bps and lot_size_microunits helpers used for fill notional before computing margin snapshots, withdrawal/order equity checks, and mandate leverage checks.",
+    "consensus_rationale": "These calculations run inside deterministic block replay and RPC state reads using committed market config and position ledgers. All validators derive the same scaled values from the same raw ledger state; no local clock or proposer-only data is introduced.",
+    "validation_status": "rustfmt passed. Targeted node regressions passed locally: cargo test -p kombat-chain-node single_node_engine_scales_margin_snapshot_for_live_tick_lot_config --manifest-path chain/Cargo.toml -- --nocapture; cargo test -p kombat-chain-node single_node_engine_scales_initial_margin_notional_for_live_tick_lot_config --manifest-path chain/Cargo.toml -- --nocapture. Full node crate passed locally: cargo test -p kombat-chain-node --manifest-path chain/Cargo.toml (377 passed). Linux rebuild completed with validator_binary_sha256=717fdff56d2b86703ecce73d200673b6e365747f2fceb34c75db4884de827dfa. Deployed to all four validators, reset/seed/start playbook completed, and live public account/faucet/deposit/trade/risk/candle acceptance passed."
+  },
+  "public_sdk_acceptance_after_risk_scaling_fix_2026_05_03": {
+    "deployed_validator_binary_sha256": "717fdff56d2b86703ecce73d200673b6e365747f2fceb34c75db4884de827dfa",
+    "reset_result": "reset_seed_and_start_perps_demo.yml completed successfully; QuestDB candle store reset; faucet Redis limiter cleared 2 keys; all validator RPC/ingress ports healthy; market-data and RFC027 Rust MM services active.",
+    "account_id": 777819338947,
+    "policy_id": 777819339048,
+    "evm_address": "0x57038dc3a0face0850f55a6ca5e88466945b17bd",
+    "flow": [
+      "kombat_createAccount on public RPC",
+      "kombat_faucetFundAccount for 500 USDC policy balance and 25 USDC EVM balance",
+      "signed owner-call create_policy with non-zero gas budget/refill",
+      "signed deposit_collateral intent for 90 USDC on BTC market 7",
+      "signed 1-lot BTC market IOC bid against RFC027 MM book",
+      "kombat_getAccountRiskSummary after fill",
+      "market-data /candles wall-clock query"
+    ],
+    "order_result": {
+      "market_id": 7,
+      "client_order_id": 815947,
+      "stage": "filled",
+      "filled_lots": 1,
+      "block_height": 566,
+      "event_seq": 1755,
+      "timestamp_ms": 1777819015500
+    },
+    "risk_after_trade": {
+      "total_collateral": "90000000",
+      "total_equity": "90000000",
+      "total_maintenance_requirement": "40",
+      "total_margin_surplus": "89999960",
+      "total_bad_debt": "0",
+      "under_maintenance_market_count": 0
+    },
+    "candle_after_trade": {
+      "market_id": 7,
+      "interval": "1m",
+      "timestamp_ms": 1777818960000,
+      "open": 7873500282750,
+      "high": 7873500282750,
+      "low": 7873500282750,
+      "close": 7873500282750,
+      "volume_lots": 1,
+      "trade_count": 1,
+      "first_seq": 1755,
+      "last_seq": 1755
+    }
+  },
+  "llm_taker_fleet_post_reset_policy_gap_2026_05_03": {
+    "problem": "After the reset/deploy, the RFC027 Rust MM bot was active and quoting 100 lanes, and the Python LLM trader systemd units were active. However, the LLM trader logs showed each market agent failing on kombat_getPolicy with unknown policy 27010101 through 27010501 before submitting testnet taker orders.",
+    "evidence": {
+      "market_maker_service": "kombat-perps-demo-liquidity-bot active since 2026-05-03 16:39:51 CEST; logs show RFC027 program enrolled maker=260001 markets=[7,8,9,10,11], reconciled 100 lane orders, quoting 10 levels per side.",
+      "llm_services": "and-llm-trader, and-llm-trader-eth, and-llm-trader-sol, and-llm-trader-doge, and-llm-trader-xrp active but repeatedly logging unknown policy for their configured 27010x01 policy IDs.",
+      "root_cause_hypothesis": "reset_seed_and_start_perps_demo.yml seeds LLM trader account balances/collateral but does not recreate the owner-call policies consumed by the already-running llm-trader units unless deploy_llm_trader_fleet.yml setup is run after the reset."
+    },
+    "validation_status": "Manual remote setup created policies 27010101 through 27010501 and restarted all five services. deploy_llm_trader_fleet.yml then completed successfully after the Ansible runner loaded OPENROUTER_API_KEY from the ignored local .env. Logs show submitted bid/ask 1-lot IOC intents from each agent; several are immediately eligible and several are pending stale_market_data until oracle freshness catches up."
+  },
+  "ansible_openrouter_secret_loader_2026_05_03": {
+    "problem": "deploy_llm_trader_fleet.yml requires OPENROUTER_API_KEY, but the operator shell may not export it even though the ignored local Ansible .env contains the testnet key. That made post-reset LLM trader redeploy/setup non-reproducible from a clean shell.",
+    "fix": "Updated chain/deploy/ansible/run_playbook.sh to load OPENROUTER_API_KEY from chain/deploy/ansible/.env only when the caller has not already supplied the variable. The .env file remains git-ignored; the experiment log intentionally does not record the secret value.",
+    "validation_status": "Validated by running env -u OPENROUTER_API_KEY chain/deploy/ansible/run_playbook.sh -i chain/deploy/ansible/inventory/testnet.yml chain/deploy/ansible/playbooks/deploy_llm_trader_fleet.yml. The playbook's Require OPENROUTER_API_KEY assertion passed and the full fleet deploy completed successfully with failed=0. No secret value was written to this log."
+  },
+    "post_secret_loader_live_service_check_2026_05_03": {
+      "services": {
+        "market_maker": "kombat-perps-demo-liquidity-bot active on root@203.0.113.10; order books for markets 7-11 each show live bid/ask RFC027 maker depth.",
+        "llm_takers": "and-llm-trader, and-llm-trader-eth, and-llm-trader-sol, and-llm-trader-doge, and-llm-trader-xrp active on root@203.0.113.10 after deploy_llm_trader_fleet.yml. Logs show BTC, SOL, DOGE, and XRP continuing to submit 1-lot IOC taker intents; ETH was waiting on an in-flight nonce during the sampled window.",
+      "market_data": "kombat-market-data active; full-range QuestDB candle queries returned post-reset 1m candles for all markets 7-11."
+    },
+    "consensus_check": {
+      "head_height": 1908,
+      "committed_state_root_hex": "0x0d17c033c412f8e4f61cbfcd7f504e4a0dedf6ebf8204f86105c8d9860a60f41",
+      "note": "Direct kombat_chainInfo checks showed all four validators at the same height and committed_state_root. Head hashes differed across validators, so hash-level convergence should be tracked separately; the committed state-root agreement is the consensus safety check used here."
+    },
+    "latest_candles_sample": [
+      {
+        "market_id": 7,
+        "timestamp_ms": 1777819140000,
+        "volume_lots": 66,
+        "trade_count": 4
+      },
+      {
+        "market_id": 8,
+        "timestamp_ms": 1777819080000,
+        "volume_lots": 5,
+        "trade_count": 5
+      },
+      {
+        "market_id": 9,
+        "timestamp_ms": 1777819080000,
+        "volume_lots": 27,
+        "trade_count": 27
+      },
+      {
+        "market_id": 10,
+        "timestamp_ms": 1777819140000,
+        "volume_lots": 8,
+        "trade_count": 8
+      },
+      {
+        "market_id": 11,
+        "timestamp_ms": 1777819140000,
+        "volume_lots": 8,
+        "trade_count": 8
+        }
+      ]
+    },
+    "llm_taker_pending_status_and_direct_rpc_fix_2026_05_03": {
+      "problem": "After the public edge was healthy, candles still stalled because the Python LLM taker fleet could hold a stale pending nonce locally. Some submitted intents expired or disappeared from the queried validator's local view, but the agent kept treating the nonce as blocked. The deployed fleet also still read/wrote through the public edge load balancer, so getPolicy/getIntentStatus and submitIntent could observe different validator-local admission views during high churn.",
+      "fix": "Added Python SDK get_intent_status, taught llm-trader to store pending intent ids, clear terminal processed/expired/rejected statuses, and clear stale unknown/non-queued pending ids after the configured intent TTL. The loadgen inventory now pins the fleet to validator-1 direct RPC for nonce-sensitive testnet taker traffic.",
+      "production_rationale": "The SDK/status change is production-useful for agents. The direct-RPC pin is a testnet operational workaround, not a production routing model; production should rely on robust leader/owner relay and status convergence behind the public edge.",
+      "regression_tests": [
+        "PYTHONPATH=chain/examples/python/llm-trader:chain/sdk/python python3 -m unittest discover -s chain/examples/python/llm-trader/tests -v",
+        "python3 -m unittest discover -s chain/sdk/python/tests -v"
+      ],
+      "deployment_status": "deploy_llm_trader_fleet.yml completed successfully and all five /etc/and-chain/llm-trader*.env files on loadgen-1 now use AND_RPC_URL=http://203.0.113.15:8545."
+    },
+    "mahi_wall_clock_runtime_timestamp_fix_2026_05_03": {
+      "problem": "After reset-time timestamps were corrected, the chain still drifted behind wall clock during continuous auto-MAHI production. spawn_auto_mahi_round advanced scheduled timestamps by the configured interval from the previous head; when real commit cadence was slower than the target interval, committed order_filled/order_replaced events lagged wall clock by roughly 50 minutes. QuestDB candles therefore stopped near the lagged committed timestamp even while validators and bots were active.",
+      "fix": "rebase_auto_network_round_timestamp now rebases the scheduled timestamp against wall-clock unix_now_ms in addition to head_timestamp + interval. Future auto-MAHI blocks catch up to current epoch time instead of accumulating timestamp lag.",
+      "consensus_rationale": "The producer timestamp remains committed block data and validators replay it deterministically. This does not read local wall clock during follower replay; it only changes the timestamp chosen by the local auto-producer for new proposed blocks.",
+      "regression_tests": [
+        "cargo test -p kombat-chain-rpc rebases_auto_network_round_timestamp --manifest-path chain/Cargo.toml"
+      ],
+      "deployment_status": "targeted local RPC tests passed. Linux rebuild completed with validator_binary_sha256=6d69955f50e91d80cbfef8c4b0cd793d207c001b6a494279dc3d1bd9eb8928d8; pending redeploy and verification that committed order_filled events and market-data 1m candles advance near wall clock."
+    },
+  "temporary_testnet_relaxations_2026_05_03": {
+    "rule": "Any relaxation in this block is allowed only for the resettable live testnet and must be removed or replaced before calling the deployment production-shaped.",
+    "items": [
+        {
+          "name": "bootstrap-only local bridge mutations",
+          "status": "active only during reset seeding",
+          "why_not_production": "The bridge mutators rewrite local committed state outside block consensus if left enabled on a running validator set.",
+          "required_exit": "Keep KOMBAT_LOCAL_BRIDGE_MUTATIONS_ENABLED disabled at public runtime; use consensus-carried faucet, signed intents, and block-carried RFC027 actions instead."
+        },
+        {
+          "name": "operator/governance bridge for RFC027 Define/Retire",
+          "status": "testnet bootstrap path",
+          "why_not_production": "DefineProgram and RetireProgram need explicit governance signer configuration rather than operator-token bridge admission.",
+          "required_exit": "Implement and deploy governance-signed RFC027 program submission before exposing public governance changes."
+        },
+        {
+          "name": "MAHI payload sharding override",
+          "status": "active for the RFC027 MM/taker live-testnet rollout as of 2026-05-03; inventory defaults KOMBAT_MAHI_PAYLOAD_SHARDING=0 until owner-relay/status convergence is hardened",
+          "why_not_production": "Disabling payload sharding lets producers drain all local ready frontiers instead of only their policy shard. Replay remains deterministic, but throughput/capacity isolation is weaker and duplicate inclusion pressure increases.",
+          "required_exit": "Re-enable default payload sharding after owner-relay/high-volume bot submission is proven stable behind the public edge."
+        },
+        {
+          "name": "single-leader synchronous MAHI rollout pin",
+          "status": "active for the RFC027 MM/taker live-testnet reset after 2026-05-03 multi-leader divergence evidence",
+          "why_not_production": "KOMBAT_MAHI_MULTILEADER=0 and KOMBAT_MAHI_ASYNC_BLOCK_BROADCAST=false reduce throughput and do not exercise the intended high-throughput multi-leader/async path. The relaxation is only to prove bot-to-chain-to-market-data correctness while the multi-leader commit-log convergence bug is isolated.",
+          "required_exit": "Restore KOMBAT_MAHI_MULTILEADER=4 and KOMBAT_MAHI_ASYNC_BLOCK_BROADCAST=true after cross-validator commit_log_hash/state_hash/orderbook/policy-nonce convergence is proven under the RFC027 MM+taker workload."
+        },
+        {
+          "name": "direct validator RPC pin for Python LLM takers",
+          "status": "loadgen-only testnet workaround",
+          "why_not_production": "Agents should be able to use the public edge without observing inconsistent local validator views for nonce/status checks.",
+          "required_exit": "Harden leader/owner relay and status convergence so takers can return to https://testnet.0x26.xyz/api."
+        },
+        {
+          "name": "restart persistence",
+          "status": "documented TODO",
+          "why_not_production": "Plain service restart can boot a fresh in-memory engine unless started from a saved snapshot or remote bootstrap.",
+          "required_exit": "Add durable block/state persistence or a non-destructive restart playbook that saves and reloads latest.snapshot before peers/ingress resume."
+        },
+        {
+          "name": "RFC039 rate limiting",
+          "status": "pending",
+          "why_not_production": "Public signed delegation and RFC027 submissions are bounded by pending caps but not yet rate-limited for adversarial public traffic.",
+          "required_exit": "Deploy RFC039-style rate limits or equivalent ingress throttling before adversarial/public production operation."
+      }
+    ]
+  },
+  "position_notional_read_model_and_live_tick_scale_fix_2026_05_03": {
+    "problem": "A browser trade using 50% of a 100 USDC account showed a sane ticket estimate around 500 USDC notional, but the post-fill position table showed open_notional around 50,010,865,703 USDC. Live kombat_getAccountTradingState for account 1777823989233583 exposed raw tick-lot ledger values in PositionResponse, while the live market seed used tick_size_bps=1 with lot_size_microunits=1. The result was two independent scaling errors: RPC consumers rendered raw tick-lot values as micro-USDC, and risk/margin treated displayed BTC prices as 100x smaller than the UI ticket.",
+    "fix": "NodeRpcService now scales PositionResponse and PositionHistoryRecordResponse open_notional, buy_notional, sell_notional, and realized_pnl from raw tick-lot ledger units into micro-USDC using the committed PerpetualMarket tick_size_bps and lot_size_microunits. The live testnet market seed now sets tick_size_bps=100 for markets 7-11, which matches the UI price scale and current chain notional formula. The perps UI position table displays net base size instead of raw lot count.",
+    "consensus_rationale": "The RPC read-model scaling is not a consensus state change; the raw ledger remains unchanged and deterministic. The tick_size_bps correction is committed market configuration seeded during a full reset, so every validator replays the same market config and risk calculations.",
+    "regression_tests": [
+      "cargo test -p kombat-chain-rpc node_rpc_scales_live_tick_lot_position_read_model --manifest-path chain/Cargo.toml",
+      "cargo test -p kombat-chain-node single_node_engine_scales_ --manifest-path chain/Cargo.toml"
+    ],
+    "deployment_status": "Deployed validator_binary_sha256=2f9cc6c419d52a415e1eef779187b742e84be23c3767c960a5c05b50176a2292 to all four validators, completed a full reset/seed/start run, deployed perps UI sonatribe/and-dex-ui:0.1.20, and reran the public account/faucet/policy/deposit/trade acceptance flow.",
+    "live_verification": {
+      "served_ui_asset": "/assets/index-BjJmFjna.js",
+      "served_ui_css": "/assets/index-BBWjv07L.css",
+      "synthetic_account_id": 880005501938593,
+      "synthetic_policy_id": 880005501938694,
+      "synthetic_market_id": 7,
+      "collateral_micro_usdc": "100000000",
+      "filled_lots": 6354,
+      "fill_price_ticks": 7877166114750,
+      "open_notional_micro_usdc": "500515135",
+      "maintenance_requirement_micro_usdc": "25025757",
+      "margin_surplus_micro_usdc": "74974243",
+      "evidence": "Public SDK flow created a new account, funded it through the consensus faucet, created a wallet/session policy, deposited 100 USDC collateral, submitted a 6,354-lot BTC IOC bid, and read back a scaled 500.515135 USDC open notional with 25.025757 USDC maintenance requirement."
+    }
+  },
+  "chart_timezone_and_trade_candle_semantics_2026_05_03": {
+    "observation": "After UI 0.1.20, the position table scales correctly, but the TradingView chart axis shows UTC times while the operator desktop is Europe/Madrid, so a local 18:55 screen shows roughly 16:55 on the chart.",
+    "fix": "LiveTradingViewChart now resolves the TradingView symbol timezone from the browser's Intl timezone, falling back to Etc/UTC only if unavailable. Market-data candle timestamp_ms values remain epoch milliseconds; this only changes display timezone.",
+    "deployment": {
+      "image": "sonatribe/and-dex-ui:0.1.21",
+      "rollout": "deployment and-dex-ui successfully rolled out",
+      "served_asset": "/assets/index-Bg3p7xte.js",
+      "served_css": "/assets/index-BBWjv07L.css",
+      "served_bundle_checks": [
+        "served JS contains UI version 0.1.21",
+        "served JS contains Intl.DateTimeFormat().resolvedOptions().timeZone",
+        "served JS no longer contains UI version 0.1.20"
+      ]
+    },
+    "trade_candle_limit": "The chart candle series is built from taker match_filled events only. Oracle mark/index updates can move the header price without producing a new candle or changing the last candle close. This is accurate trade-candle semantics, but poor demo UX when taker flow is sparse.",
+    "latest_live_sample": {
+      "sampled_at_ms": 1777827494483,
+      "chain_head_height": 1556,
+      "btc_latest_trade_timestamp_ms": 1777827383356,
+      "btc_latest_1m_candle_timestamp_ms": 1777827360000,
+      "btc_latest_1m_candle_volume_lots": 6354,
+      "btc_latest_1m_candle_trade_count": 1
+    },
+    "required_decision": "Either keep exchange-style UTC trade candles and explain the behavior, or switch the chart display to the browser timezone and add mark/index overlay or mark-derived candles for demo readability. The latter is a UI/market-data product decision, not a core-chain correctness issue."
+  },
+  "mm_taker_execution_path_fix_2026_05_03": {
+    "problem": "After UI candle timezone and read-model fixes, live trade candles still stopped because the RFC027 Rust MM and Python taker fleet were not producing continuous fills. Live evidence showed validator-local policy nonce divergence under MAHI payload sharding: validator-1 reported advanced policy nonces for 27010101 and MM lanes while validators 2-4 still reported earlier nonces for the same policies. The bots were pinned to validator-1, while policy-owner shards still saw nonce_frontier and let taker intents expire. The MM also tripped daily_volume_exceeded because 15M-lot quote replacement churn consumed the lane policy's submitted-notional cap.",
+    "fix": "For the resettable live testnet, set KOMBAT_MAHI_PAYLOAD_SHARDING=0 through inventory and pin market-data ingestion to validator-1 so bot admission, execution view, and candle ingestion read one validator path while owner-relay/status convergence is hardened. The MM deploy playbook now renders KOMBAT_MM_BOT_POLICY_MAX_VOLUME_PER_DAY_MICRO_USDC=1000000000000000000 and KOMBAT_MM_BOT_INTENT_STATUS_TIMEOUT_MS=120000. The Rust MM now reconciles a timed-out submission against open orders and treats the quote as successful if the replacement client_order_id is already visible on book. The Python taker now preserves duplicate_policy_nonce as a pending nonce and retains unknown/non-queued pending intents during a bounded grace window instead of immediately resubmitting the same nonce. The live resettable-testnet LLM taker cadence was raised in the effective kombat_loadgen host group from dust sizing (1-lot orders, 2-lot max trade, 10-lot max position) to 100000-lot IOC cadence orders with matching max trade/max position so taker flow produces visible, economically meaningful fills against the RFC027 MM book.",
+    "production_rationale": "The MM open-order reconciliation and taker duplicate-nonce handling are production-useful agent hardening. Disabling MAHI payload sharding and pinning market-data to validator-1 are testnet-only operational relaxations; production must restore sharding and make owner-relay/status convergence robust behind the public edge.",
+    "validation": [
+      "PYTHONPATH=chain/examples/python/llm-trader:chain/sdk/python python3 -m unittest discover -s chain/examples/python/llm-trader/tests -v",
+      "cargo test -p kombat-chain-loadgen --manifest-path chain/Cargo.toml --bin kombat_mm_bot",
+      "python3 -m json.tool chain/experiments/live/276-rfc027-mm-testnet-rollout.json"
+    ],
+    "deployment_status": "First redeploy/reset with payload sharding disabled produced real fills on validator-1 and public market-data candles, but validators diverged at MAHI commit_log_hash/state_hash and validator-1 alone advanced taker/MM policy nonces. A follow-up discovered the intended single-leader reset incorrectly used KOMBAT_MAHI_MULTILEADER=1, which the parser treats as default multileader; the next reset must pin KOMBAT_MAHI_MULTILEADER=0 and KOMBAT_MAHI_ASYNC_BLOCK_BROADCAST=false to verify the real MM/taker path without multi-leader divergence. After observing live taker logs still submitting 1-lot IOC orders, the effective kombat_loadgen inventory now raises the resettable-testnet taker cadence size to 100000 lots before the next LLM trader fleet redeploy."
+  },
+  "mahi_multileader_env_semantics_fix_2026_05_03": {
+    "problem": "The intended single-leader reset was configured as KOMBAT_MAHI_MULTILEADER=1, but the runtime parser defines 1/true/on as 'enable default multileader'. Live metrics after the reset still reported number_of_leaders=4, so the reset did not actually test the planned single-leader relaxation.",
+    "evidence": {
+      "inventory_before_fix": "chain/deploy/ansible/inventory/group_vars/kombat_live_testnet.yml set and_chain_mahi_multileader: \"1\" under a comment claiming single-leader.",
+      "runtime_parser": "parse_mahi_number_of_leaders maps 0/false/off to 1 leader, maps 1/true/on to DEFAULT_MAHI_MULTILEADER_COUNT, and maps numeric strings greater than 1 to that exact count capped by validator_count.",
+      "live_metrics": "kombat_getConsensusMetrics reported mahi.number_of_leaders=4 on all validators after the supposed single-leader reset."
+    },
+    "fix": "Set and_chain_mahi_multileader: \"0\" in the live-testnet inventory and updated the Ansible README to document the parser semantics explicitly.",
+    "validation_status": "Config patch applied and JSON log validated locally. Pending redeploy/reset verification must assert mahi.number_of_leaders=1 before judging MM/taker convergence."
+  },
+  "validation": {
+      "local_commands": [
+        "cargo test -p kombat-chain-node mahi_merged_stale_replace_payload_rejects_without_block_failure --manifest-path chain/Cargo.toml",
+      "cargo test -p kombat-chain-rpc local_bridge_mutation_rpcs_are_disabled_by_default --manifest-path chain/Cargo.toml",
+      "cargo test -p kombat-chain-rpc requires_operator_bearer_token_for_risk_setters --manifest-path chain/Cargo.toml",
+      "cargo test -p kombat-chain-rpc requires_operator_bearer_token_for_evm_usdc_admin_setters --manifest-path chain/Cargo.toml",
+      "cargo test -p kombat-chain-rpc json_rpc_faucet_enforces_limiter --manifest-path chain/Cargo.toml",
+      "cargo check -p kombat-chain-rpc --manifest-path chain/Cargo.toml",
+      "cargo test -p kombat-chain-rpc json_rpc_submit_evm_owner_call_creates_policy_for_wallet_owned_account --manifest-path chain/Cargo.toml -- --nocapture",
+      "cargo test -p kombat-chain-rpc faucet --manifest-path chain/Cargo.toml -- --nocapture",
+      "cargo test -p kombat-chain-node external_block_applies_consensus_faucet_item --manifest-path chain/Cargo.toml -- --nocapture",
+      "cargo test -p kombat-chain-node mahi_ --manifest-path chain/Cargo.toml",
+      "cargo check -p kombat-chain-loadgen --bin kombat_mm_bot --manifest-path chain/Cargo.toml",
+      "PYTHONPATH=chain/examples/python/llm-trader:chain/sdk/python python3 -m unittest discover -s chain/examples/python/llm-trader/tests",
+      "python3 -m py_compile chain/examples/python/llm-trader/llm_trader/agent.py chain/examples/python/llm-trader/llm_trader/__main__.py",
+      "ANSIBLE_HOME=/tmp/ansible-home ANSIBLE_LOCAL_TEMP=/tmp/ansible-local-tmp ansible-playbook --syntax-check reset_seed_and_start_perps_demo.yml / reset_and_seed.yml / deploy_llm_trader_fleet.yml",
+      "npm run build in perps-dex-ui",
+      "rustfmt --edition 2021 chain/crates/node/src/lib.rs chain/crates/loadgen/src/bin/kombat_mm_bot.rs",
+      "chain/scripts/build_linux_binaries.sh",
+      "cargo fmt --manifest-path chain/Cargo.toml --all",
+      "cargo test -p kombat-chain-rpc json_rpc_submit_intent_forwards_to_leader_one_round_behind --manifest-path chain/Cargo.toml -- --nocapture",
+      "cargo test -p kombat-chain-node single_node_engine_scales_initial_margin_notional_for_live_tick_lot_config --manifest-path chain/Cargo.toml -- --nocapture",
+      "python3 -m unittest discover -s chain/sdk/python/tests -v"
+    ],
+    "deployment_commands": [
+      "chain/deploy/ansible/playbooks/deploy.yml with KOMBAT_BINARY_PATH=chain/target-linux-x86_64/release/kombat_chain",
+      "chain/deploy/ansible/playbooks/deploy_perps_demo_liquidity_bot.yml",
+      "chain/deploy/ansible/playbooks/deploy_llm_trader.yml with OPENROUTER_API_KEY sourced from the existing remote env",
+      "perps-dex-ui/scripts/deploy.sh 0.1.6",
+      "perps-dex-ui/scripts/deploy.sh 0.1.7",
+      "perps-dex-ui/scripts/deploy.sh 0.1.15",
+      "perps-dex-ui/scripts/deploy.sh 0.1.16",
+      "perps-dex-ui/scripts/deploy.sh 0.1.17",
+      "perps-dex-ui/scripts/deploy.sh 0.1.18",
+      "perps-dex-ui/scripts/deploy.sh 0.1.19",
+      "perps-dex-ui/scripts/deploy.sh 0.1.20",
+      "perps-dex-ui/scripts/deploy.sh 0.1.21",
+      "chain/deploy/ansible/playbooks/reset_faucet_limiter.yml",
+      "chain/deploy/ansible/run_playbook.sh -i chain/deploy/ansible/inventory/testnet.yml chain/deploy/ansible/playbooks/reset_seed_and_start_perps_demo.yml",
+      "chain/deploy/ansible/run_playbook.sh -i chain/deploy/ansible/inventory/testnet.yml chain/deploy/ansible/playbooks/deploy_llm_trader_fleet.yml"
+    ],
+    "post_deploy_observations": [
+      "After the 20:13 bot restart, validator-1 logs show auto-mahi-round progress and no new UnknownRestingOrder execution-failure loop in the narrowed post-restart window.",
+      "The bot service is active and reports: RFC027 program enrolled maker=260001 markets=[7, 8, 9, 10, 11].",
+      "The bot reconciled 100 existing lane orders with orphan_orders=0 before quoting.",
+      "Post-only-cross rejections were not observed in the post-clamp bot log sample; remaining observed failures are accepted_direct wait timeouts on a few DOGE ask replacement lanes."
+    ],
+    "short_soak_2026_05_02_20_18_europe_madrid": {
+      "validator_error_grep": "No post-restart matches for merged mahi commit execution failed, mahi commit execution failed, or UnknownRestingOrder.",
+      "bot_status": "active",
+      "book_depths": [
+        {
+          "market_id": 7,
+          "bids": 10,
+          "asks": 10
+        },
+        {
+          "market_id": 8,
+          "bids": 10,
+          "asks": 10
+        },
+        {
+          "market_id": 9,
+          "bids": 10,
+          "asks": 10
+        },
+        {
+          "market_id": 10,
+          "bids": 10,
+          "asks": 10
+        },
+        {
+          "market_id": 11,
+          "bids": 10,
+          "asks": 10
+        }
+      ],
+      "remaining_bot_issue": "DOGE ask replacement lanes continue to emit wait timeouts with last_stage=accepted_direct or unknown; existing orders remain live, but replacement freshness needs a retry/latency follow-up."
+    },
+    "chart_candle_check_2026_05_02_20_37_europe_madrid": {
+      "llm_trader_log": "After cadence was enabled, and-llm-trader logged a hold decision followed by submitted bid 1 lots tif=ioc, then a later submitted ask 1 lots tif=ioc.",
+      "trade_history": {
+        "market_id": 7,
+        "maker_account": 260001,
+        "taker_account": 270101,
+        "taker_client_order_id": 1,
+        "role": "taker",
+        "side": "buy",
+        "price_ticks": 7847866972500,
+        "quantity_lots": 1,
+        "block_height": 3781,
+        "timestamp_ms": 374000
+      },
+      "candle": {
+        "market_id": 7,
+        "interval": "1m",
+        "timestamp_ms": 360000,
+        "open": 7847866972500,
+        "high": 7847916997500,
+        "low": 7847866972500,
+        "close": 7847916997500,
+        "volume_lots": 2,
+        "trade_count": 2
+      },
+      "ui_implication": "A fresh market snapshot now includes latest_trade for market 7 and kombat_getCandles returns a non-empty 1m result, so the chart gate should render TradingView rather than the empty no-candles panel."
+    },
+    "chart_candle_check_2026_05_03_08_45_europe_madrid": {
+      "public_market_data_direct": "https://app.0x26.xyz/api/market-data/candles?market_id=7&interval=1m&from_ms=0&to_ms=9999999999999&limit=3 returned three non-empty candles.",
+      "public_market_data_wall_clock": "A wall-clock range request for the same market returned [] before the UI fallback, confirming the chain-time versus wall-clock timestamp-domain mismatch.",
+      "public_rpc_snapshot": "https://app.0x26.xyz/api kombat_getMarketSnapshot market 7 returned latest_trade with timestamp_ms=538400 and live 10x10 book depth.",
+      "served_html_asset": "https://app.0x26.xyz/ references /assets/index-CjCYLu0m.js after the 0.1.6 rollout.",
+      "browser_verification_gap": "Local browser MCP was disconnected and Playwright was not installed in perps-dex-ui, so visual verification was not captured in this item."
+    },
+    "chart_request_storm_check_2026_05_03": {
+      "browser_observation": "DevTools showed repeated /api/market-data/candles calls alternating wall-clock ranges with from_ms=0 full-history fallback queries at roughly 10 requests per second.",
+      "code_response": "Deployed 0.1.7 to remove repeated full-history fallback after the offset is known.",
+      "remaining_validation": "Requires browser hard-refresh and live Network panel confirmation after the clean reset."
+    },
+    "public_book_snapshot_2026_05_02_20_16_44_europe_madrid": [
+      {
+        "market_id": 7,
+        "bids": 10,
+        "asks": 10,
+        "mark_price_ticks": 7832195500000,
+        "best_bid": {
+          "price_ticks": 7827168957750,
+          "total_lots": 15000000
+        },
+        "best_ask": {
+          "price_ticks": 7835000042250,
+          "total_lots": 15000000
+        }
+      },
+      {
+        "market_id": 8,
+        "bids": 10,
+        "asks": 10,
+        "mark_price_ticks": 230699500000,
+        "best_bid": {
+          "price_ticks": 230499192750,
+          "total_lots": 15000000
+        },
+        "best_ask": {
+          "price_ticks": 230729807250,
+          "total_lots": 15000000
+        }
+      },
+      {
+        "market_id": 9,
+        "bids": 10,
+        "asks": 10,
+        "mark_price_ticks": 8397500000,
+        "best_bid": {
+          "price_ticks": 8393301250,
+          "total_lots": 15000000
+        },
+        "best_ask": {
+          "price_ticks": 8401698750,
+          "total_lots": 15000000
+        }
+      },
+      {
+        "market_id": 10,
+        "bids": 10,
+        "asks": 10,
+        "mark_price_ticks": 10841500,
+        "best_bid": {
+          "price_ticks": 10833080,
+          "total_lots": 15000000
+        },
+        "best_ask": {
+          "price_ticks": 10849338,
+          "total_lots": 18750000
+        }
+      },
+      {
+        "market_id": 11,
+        "bids": 10,
+        "asks": 10,
+        "mark_price_ticks": 139045000,
+        "best_bid": {
+          "price_ticks": 138955487,
+          "total_lots": 15000000
+        },
+        "best_ask": {
+          "price_ticks": 139094512,
+          "total_lots": 15000000
+        }
+      }
+    ],
+    "mm_owner_call_partial_fanout_fix_2026_05_03": {
+      "problem": "After the 2026-05-03 reset/deploy, the RFC027 Rust MM bot crash-looped during lane-policy bootstrap. Each restart created one additional lane policy, but submit_typed_owner_call returned rpc error -32021 owner call rejected, so the bot exited before reaching quote placement and market 7 had an empty book.",
+      "live_evidence": {
+        "service": "kombat-perps-demo-liquidity-bot on loadgen-1",
+        "log_pattern": "Error: create lane policy 26000175 failed: rpc error -32021: owner call rejected, then 26000176, 26000177, etc.",
+        "state_observation": "kombat_getPolicy showed the supposedly failed lane policies existed and maker account 260001 nonce/controllers advanced, proving the owner-call result was ambiguous after partial fanout rather than a pure local rejection."
+      },
+      "fix": "Updated kombat_mm_bot ensure_lane_policies to poll kombat_getPolicy after an owner-call submission error. If the target lane policy exists, the bot treats the ambiguous response as applied, advances the local account nonce cursor, and continues bootstrap instead of exiting.",
+      "validation_status": "pending local loadgen build, bot redeploy, live order-book check, and end-to-end account/faucet/deposit/trade acceptance run."
+    },
+    "restart_persistence_gap_2026_05_03": {
+      "problem": "A plain service restart can appear to lose chain state because the current validator process is in-memory unless started from KOMBAT_LOAD_SNAPSHOT_PATH or remote bootstrap. The seed flow saves bootstrap-seeded.snapshot and uses it for a one-shot bootstrap restart, then removes KOMBAT_LOAD_SNAPSHOT_PATH; a later restart of validator-1 can therefore boot a fresh engine and downstream validators/ingress can bootstrap from that fresh head.",
+      "what_is_not_a_bug": "reset_state.yml and reset_seed_and_start_perps_demo.yml intentionally delete /var/lib/and-chain and QuestDB/limiter state as part of complete reset runs.",
+      "todo": "Add a non-destructive restart/deploy path that saves a latest snapshot, keeps a stable load target such as /var/lib/and-chain/snapshots/latest.snapshot, starts validator-1 from that snapshot, then restarts the rest of the validator set and ingress services. Longer-term fix is durable node block/state persistence rather than operator-managed snapshot handoff.",
+      "doc": "chain/deploy/ansible/README.md Restart Persistence TODO"
+    },
+    "faucet_forwarding_partial_response_fix_2026_05_03": {
+      "problem": "The public faucet request for account 1780000812537992 returned JSON-RPC error -32000 timeout recovery quorum unavailable, but kombat_getWalletBalances immediately showed policy_usdc_balance=100000000 and evm_usdc_balance=25000000 for the target address. The forwarded write reached the leader and committed, but the ingress/follower surfaced timeout-recovery failure instead of retrying the idempotent forwarded request.",
+      "fix": "Treat leader timeout recovery as best-effort inside the forwarded-write retry loop. A failed timeout-recovery attempt is recorded/logged but no longer aborts the user request before the bounded forwarding retries are exhausted.",
+      "consensus_rationale": "Forwarded public writes in this path are idempotent by intent id, action id, or faucet target address. Retrying after an ambiguous transport failure is safer than returning an error while the leader may already have committed the state transition.",
+      "regression_tests": [
+        "cargo test -p kombat-chain-rpc json_rpc_faucet_forwarding_retries_when_timeout_recovery_unavailable --manifest-path chain/Cargo.toml -- --nocapture",
+        "cargo test -p kombat-chain-rpc json_rpc_faucet_waits_for_consensus_block_item --manifest-path chain/Cargo.toml -- --nocapture",
+        "cargo test -p kombat-chain-rpc node_rpc_risk_summary_includes_collateral_only_market --manifest-path chain/Cargo.toml -- --nocapture"
+      ],
+      "validation_status": "targeted local RPC tests passed; pending Linux rebuild, redeploy, and end-to-end account/faucet/deposit/trade acceptance run."
+    }
+  },
+    "known_followups": [
+      "Implement restart persistence: non-destructive deploy/restart must preserve live state by loading a latest snapshot on validator-1 before restarting peers/ingress.",
+      "Remove temporary testnet relaxations before production-shaped rollout: restore MAHI payload sharding, remove direct-RPC taker pin, replace RFC027 Define/Retire bridge with governance signing, and add RFC039-style public submission rate limits.",
+      "Accepted-direct timeout retries on some replacement lanes still need a soak/tuning pass. The current evidence says this is no longer a post-only-cross issue and no longer a MAHI UnknownRestingOrder block-invalid loop.",
+      "Run a longer post-fix soak and record whether all lanes keep 10x10 depth without accumulating timeout retries.",
+      "Commit the working-tree changes and update this item with the final commit hash before treating this as a release-grade record.",
+      "Run the broader node/RPC/loadgen suites once the long-tail network tests are not blocking signal."
+  ],
+  "artifacts": [
+    "validator-1 journalctl -u kombat-chain --since '2026-05-02 20:13:14'",
+    "root@203.0.113.10 journalctl -u kombat-perps-demo-liquidity-bot --since '2026-05-02 20:13:14'",
+    "/tmp/mm-snapshot-7.json",
+    "/tmp/mm-snapshot-8.json",
+    "/tmp/mm-snapshot-9.json",
+    "/tmp/mm-snapshot-10.json",
+    "/tmp/mm-snapshot-11.json",
+    "/tmp/index-CjCYLu0m.js",
+    "/tmp/index-vM6Ui6Rk.js",
+    "https://app.0x26.xyz/assets/index-CXIqkhzu.js",
+    "https://app.0x26.xyz/assets/index-HPUT72th.css"
+  ],
+  "conclusion": "The reset testnet is running the RFC027 Rust MM path with consensus-safe faucet/account activation and live taker-generated candles. Remaining work is not another reset; it is a commit/review pass, broader test-suite signal once the known long-tail network tests are isolated, and a soak on MM lane replacement timeout behavior."
+}

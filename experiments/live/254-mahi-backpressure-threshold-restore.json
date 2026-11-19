@@ -1,0 +1,95 @@
+{
+  "id": 254,
+  "name": "mahi-backpressure-threshold-restore",
+  "status": "binned",
+  "date": "2026-04-26",
+  "base_results": [
+    {
+      "decision_log_item": 251,
+      "committed_tps": 77666.8,
+      "finding": "current clean live reference after nginx isolation"
+    },
+    {
+      "decision_log_item": 253,
+      "status": "binned",
+      "finding": "65,536-item observer relay queue bound produced controlled retries under the normal 100k/60s topology"
+    }
+  ],
+  "hypothesis": "Item 253 proved the backpressure path works but its live threshold was too low. Raising observer relay and pre-admitted backpressure thresholds to the hard Mahi pre-admitted pool size should restore item-251-class zero-error throughput while retaining client-visible retry before unbounded overload.",
+  "planned_files": [
+    "chain/crates/rpc/src/lib.rs",
+    "chain/deploy/ansible/inventory/group_vars/kombat_live_testnet.yml",
+    "chain/experiments/live/254-mahi-backpressure-threshold-restore.json",
+    "chain/THROUGHPUT_DECISION_LOG.md"
+  ],
+  "planned_config": {
+    "KOMBAT_MAHI_OBSERVER_RELAY_QUEUE_MAX_ITEMS": 524288,
+    "KOMBAT_MAHI_PRE_ADMITTED_BACKPRESSURE_ITEMS": 524288,
+    "rationale": "Match the hard Mahi pre-admitted pool capacity so normal green-topology burst buffering does not become premature RPC retry."
+  },
+  "planned_tests": [
+    "cargo test -p kombat-chain-rpc --manifest-path chain/Cargo.toml mahi_observer_async_relay_backpressures_when_queue_full --lib",
+    "cargo test -p kombat-chain-rpc --manifest-path chain/Cargo.toml network_relay_intents_in_mahi_mode_retries_at_pre_admitted_high_water --lib",
+    "cargo test -p kombat-chain-rpc --manifest-path chain/Cargo.toml --lib -- --test-threads=1"
+  ],
+  "planned_live_steps": [
+    {
+      "description": "build release binary natively for Linux from the tagged experiment commit",
+      "command": "cargo build --release -p kombat-chain-rpc --bin kombat_chain"
+    },
+    {
+      "description": "deploy default three-ingress topology with restored thresholds",
+      "command": "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) KOMBAT_BINARY_PATH=/tmp/kombat_chain-live-<commit>-linux .venv/bin/ansible-playbook playbooks/deploy.yml"
+    },
+    {
+      "description": "wipe state and restart default live topology",
+      "command": "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible kombat_live_testnet -m shell -a 'systemctl stop kombat-chain-ingress3 kombat-chain-ingress2 kombat-chain-ingress kombat-chain && rm -rf /var/lib/and-chain && mkdir -p /var/lib/and-chain/snapshots && chown -R and-chain:and-chain /var/lib/and-chain && systemctl start kombat-chain && systemctl start kombat-chain-ingress kombat-chain-ingress2 kombat-chain-ingress3'"
+    },
+    {
+      "description": "run current clean reference topology",
+      "artifact": "/tmp/and-live-254-threshold-restore-100k-60s",
+      "command": "LOADTEST_OUTPUT_DIR=/tmp/and-live-254-threshold-restore-100k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=1 LOADTEST_FAIL_ON_ERRORS=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 100000 60"
+    }
+  ],
+  "success_criteria": {
+    "request_errors": 0,
+    "state_roots_match_at_common_height": true,
+    "pools_drained": true,
+    "committed_tps_floor": 76000,
+    "rollback_if_miss": "If zero-error item-251-class throughput does not return, revert the item253 runtime behavior and redeploy the item251 binary/config before further protocol work."
+  },
+  "result": {
+    "status": "binned",
+    "artifact": "/tmp/and-live-254-threshold-restore-100k-60s",
+    "code_commit": "09cea38a8",
+    "tag": "chain-exp-254-mahi-backpressure-threshold-restore-code",
+    "deployed_linux_binary_sha256": "386f2f9c9d6415d044e1b0e6d845ef486783a1a82395839d12b8e0f31fa2bf32",
+    "load": {
+      "target_rps": 100000,
+      "duration_secs": 60,
+      "writers_per_endpoint": 32,
+      "batch_size": 8,
+      "pipeline_depth": 1,
+      "fail_on_errors": true
+    },
+    "observed": {
+      "committed_total": 1459890,
+      "committed_tps": 24331.5,
+      "ok_total": 4094952,
+      "rpc_errors": 0,
+      "nonce_errors": 0,
+      "network_errors": 0,
+      "aggregate_measured_rps": 63068.5,
+      "common_height_checked": 70,
+      "common_height_state_root": "0x172062c134000b5cc28cba9fb7879e2c9e2e31df6f94306b1de42b6a75dd5920",
+      "mahi_pre_admitted_pool_items_after_run": {
+        "validator_1": 385976,
+        "validator_2": 387536,
+        "validator_3": 354736,
+        "validator_4": 353272
+      }
+    },
+    "reason": "Raising thresholds removed item253's client-visible retries, but the item253 runtime behavior still collapsed committed TPS and left large post-drain Mahi pre-admitted backlogs. This fails the green recovery gate.",
+    "next_move": "Revert the item253 runtime behavior and redeploy the item251-style binary/config before further protocol work."
+  }
+}

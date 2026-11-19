@@ -1,0 +1,36 @@
+{
+  "id": 272,
+  "title": "Live writer provisioning bounded parallelism",
+  "date": "2026-04-27",
+  "status": "kept infrastructure",
+  "code_commit_start": "8e03ac9b847f36d8ede58a0ff0be503501ce429c",
+  "purpose": "Reduce reset-before-run live benchmark setup time by provisioning load-test writer account/policy pairs concurrently, while preserving serial behavior by default.",
+  "files_changed": [
+    "chain/scripts/prepare_live_loadtest_accounts.sh",
+    "chain/deploy/ansible/README.md",
+    "chain/experiments/live/272-parallel-writer-provisioning-harness.json",
+    "chain/THROUGHPUT_DECISION_LOG.md"
+  ],
+  "new_flags": {
+    "prepare_live_loadtest_accounts.sh": [
+      "LOADTEST_SEED_CONCURRENCY"
+    ]
+  },
+  "defaults": {
+    "LOADTEST_SEED_CONCURRENCY": 1
+  },
+  "recommended_live_value": {
+    "LOADTEST_SEED_CONCURRENCY": 16
+  },
+  "validation": [
+    "bash -n chain/scripts/prepare_live_loadtest_accounts.sh",
+    "python3 -m json.tool chain/experiments/live/272-parallel-writer-provisioning-harness.json",
+    "git diff --check -- chain/scripts/prepare_live_loadtest_accounts.sh chain/deploy/ansible/README.md chain/experiments/live/272-parallel-writer-provisioning-harness.json chain/THROUGHPUT_DECISION_LOG.md"
+  ],
+  "notes": [
+    "The concurrency implementation is chunked and does not require bash wait -n, so it is compatible with older macOS bash.",
+    "Each seed job writes an isolated log under the script work directory. On failure, the first 160 lines of each failed seed log are printed.",
+    "Default remains serial to preserve historical behavior. Live green runs should opt in with LOADTEST_SEED_CONCURRENCY=8 or 16 and log the chosen value."
+  ],
+  "next_move": "Run item273 cached live ladder with deterministic writer seed, payload cache, and LOADTEST_SEED_CONCURRENCY=16. If provisioning fails under concurrency, lower to 8 and log the failure mode."
+}

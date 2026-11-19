@@ -1,0 +1,262 @@
+{
+  "id": 277,
+  "title": "RFC027 MM live testnet handoff: single-leader fixed, trading/candles still not proven",
+  "date": "2026-05-04",
+  "status": "handoff diagnostic; not fixed",
+  "history_ingested": {
+    "live_entries": "245-276",
+    "local_entries": "266-267",
+    "non_json_entries": [
+      "chain/experiments/live/252-six-ingress-topology.vars.yml",
+      "chain/experiments/live/260-packed-v4-on-v3-hosts.txt"
+    ],
+    "required_context": "This item was written after re-ingesting all prior experiments, not just the latest RFC027 rollout item. The main repeated mistake in this thread was treating deployment/reset success, submitted intents, common committed_state_root, or service-active checks as proof that bot-to-chain-to-candles was working."
+  },
+  "current_goal": "Get the real RFC027 Rust market-maker bot and Python taker bot path working end-to-end on live resettable testnet: MM quotes through signed/session intents, takers cross the book, all validators agree on fills/orderbook/positions, market-data ingests trades, and the UI shows moving candles.",
+  "current_live_topology": {
+    "validators": {
+      "v1": "203.0.113.15:8545",
+      "v2": "203.0.113.17:8545",
+      "v3": "203.0.113.14:8545",
+      "v4": "203.0.113.16:8545"
+    },
+    "loadgen_host": "root@203.0.113.10",
+    "public_rpc": "https://testnet.0x26.xyz/api",
+    "market_data_local_on_loadgen": "http://127.0.0.1:8787",
+    "mm_service": "kombat-perps-demo-liquidity-bot",
+    "taker_services": [
+      "and-llm-trader",
+      "and-llm-trader-eth",
+      "and-llm-trader-sol",
+      "and-llm-trader-doge",
+      "and-llm-trader-xrp"
+    ],
+    "validator_binary_sha256": "2f9cc6c419d52a415e1eef779187b742e84be23c3767c960a5c05b50176a2292",
+    "market_data_binary_sha256": "a83e86408899940a1a8a5ff4d08bdce4292389e6d6f7ee4b2cbd7f82d733a727"
+  },
+  "what_is_fixed_or_ruled_out": [
+    {
+      "item": "MAHI multileader parser/config bug",
+      "evidence": "Inventory now uses KOMBAT_MAHI_MULTILEADER=0. Live metrics on all validators report mahi.number_of_leaders=1. This fixed the earlier mistake where KOMBAT_MAHI_MULTILEADER=1 was interpreted as default multileader rather than single-leader."
+    },
+    {
+      "item": "Service deployment",
+      "evidence": "After reset/seed, validator services, market-data, oracle feeder, Rust MM bot, and all five Python taker services were active."
+    },
+    {
+      "item": "Reset mechanics",
+      "evidence": "reset_seed_and_start_perps_demo.yml completed successfully, cleared QuestDB, reset chain state, seeded five markets, restarted from seeded snapshot, and ran reset_faucet_limiter.yml. Faucet limiter reported clearing 0 keys on that run, which is acceptable if already empty."
+    },
+    {
+      "item": "OpenRouter model availability is not the blocking chain issue",
+      "evidence": "Python taker logs show OpenRouter HTTP 402 and fallback cadence mode. That means the LLM decision layer is not funded, but the bot still attempts deterministic testnet cadence taker intents. This is a UX/operator issue, not the reason chain fills are absent."
+    }
+  ],
+  "current_failure_summary": {
+    "bottom_line": "The testnet is still not fixed. Single-leader MAHI is live, but the real MM/taker/candle path is failing. There are no proven fills/candles, validator orderbooks/read-model state disagree, MM quote intents time out as unknown, and taker intents are rejected by a too-low daily volume cap.",
+    "strongest_diagnostic_finding": "All four validators agree on committed_state_root_hex and mahi.commit_log_hash_hex, but disagree on mahi.state_hash_hex and orderbook contents. Treat that asymmetry as the primary bug. committed_state_root appears to cover executor committed_entries/state-trie semantics, while mahi.state_hash_hex and orderbook/read-model state cover typed SingleNodeEngine fields such as order_books, mandates, resting_order_mandates, and runtime_events. If any of those typed fields mutate outside committed MAHI block apply, validators can agree on the executor root while diverging on the trading state the UI and bots use.",
+    "symptoms": [
+      "UI candles remain flat or absent because no reliable trade history/fill stream is reaching market-data.",
+      "kombat_getTradeHistory returned [] for market 7 on all four validators in the latest check.",
+      "Orderbooks disagree across validators even while committed_state_root_hex and mahi.commit_log_hash_hex agree.",
+      "MM bot repeatedly logs quote failed ... did not execute before timeout; last_stage=unknown pending_reason=None.",
+      "BTC taker repeatedly logs daily_volume_exceeded because AND_TESTNET_TAKER_SIZE_LOTS=100000 but AND_MAX_VOLUME_PER_DAY_USDC=5000.",
+      "The same intent id can be unknown on v1/v2/v4 while expired on v3, proving status/event visibility is not cluster-consistent from the bot's RPC perspective."
+    ]
+  },
+  "latest_live_evidence_2026_05_04_0742_europe_madrid": {
+    "consensus_metrics": {
+      "shared_observation": "All validators reported committed_state_root_hex=0x0426d3e6da0b7d71c900360d4a683d968b98d125e03350f77b5e60ff17f477af and mahi.commit_log_hash_hex=0x7202efa047cf76f9e70a2f5480ac7741e615aa91ed3a31c2e7107ff30305c993.",
+      "important_caveat": "The shared committed root and commit log did not imply matching orderbook/read-model state. mahi.state_hash_hex differed on all validators.",
+      "validators": {
+        "v1": {
+          "head_height": 13071,
+          "mahi_number_of_leaders": 1,
+          "mahi_state_hash_hex": "0x58227f8a87c97281de38b3974644ccb640d35f021208e52765c4449f838b482c",
+          "produced_intent_count": 4540,
+          "received_intent_count": 430,
+          "executed_intent_count": 4960,
+          "execution_pending_count": 3
+        },
+        "v2": {
+          "head_height": 13071,
+          "mahi_number_of_leaders": 1,
+          "mahi_state_hash_hex": "0x96fc51412f5974590095f7389bcbd4b20d7798bf8e67f6b2a3d77fc601659322",
+          "produced_intent_count": 279,
+          "received_intent_count": 4691,
+          "executed_intent_count": 4960,
+          "execution_pending_count": 3
+        },
+        "v3": {
+          "head_height": 13071,
+          "mahi_number_of_leaders": 1,
+          "mahi_state_hash_hex": "0xdcc67a24f6bc1cb3714d419c2fe98427122e9303f4b298d73303ee04b89c7e63",
+          "produced_intent_count": 59,
+          "received_intent_count": 4911,
+          "executed_intent_count": 4960,
+          "execution_pending_count": 3
+        },
+        "v4": {
+          "head_height": 13076,
+          "mahi_number_of_leaders": 1,
+          "mahi_state_hash_hex": "0xd018e5f31a66b2b03b7de7fe7fb9e8b9602454dcb879508d1e13e14cf8765054",
+          "produced_intent_count": 92,
+          "received_intent_count": 4878,
+          "executed_intent_count": 4960,
+          "execution_pending_count": 3
+        }
+      }
+    },
+    "orderbook_disagreement_sample": {
+      "method": "kombat_getOrderBook depth=2",
+      "market": 7,
+      "v1_best_bid": {
+        "price_ticks": 8012900849249,
+        "total_lots": 97500000,
+        "order_count": 4
+      },
+      "v2_best_bid": {
+        "price_ticks": 7868708677500,
+        "total_lots": 15000000,
+        "order_count": 1
+      },
+      "v3_best_bid": {
+        "price_ticks": 7868708677500,
+        "total_lots": 15000000,
+        "order_count": 1
+      },
+      "v4_best_bid": {
+        "price_ticks": 8024506657750,
+        "total_lots": 22500000,
+        "order_count": 1
+      },
+      "interpretation": "Do not accept common committed_state_root as a green signal for the trading stack. The live read-model/orderbook state is divergent. This sample is not minor drift: v1 has four orders at the best bid, v2/v3 have one order each at a different price, and v4 has one order at a third price with a different size. The pattern is consistent with orders entering local books through admission, mempool, or another pre-commit path before the canonical committed block replay."
+    },
+    "intent_status_divergence_sample": {
+      "intent_id_hex": "0x8fd9e1a79026449f86afa9b7346bc9bd36b53e4d2534017ca0e81e5f387be5c9",
+      "submitted_by": "kombat_mm_bot market=11 side=Ask level=7 policy=26000198 nonce=19",
+      "v1_status": "unknown",
+      "v2_status": "unknown",
+      "v3_status": "expired, policy_id=26000198, nonce=19, latest_event_seq=4528",
+      "v4_status": "unknown",
+      "interpretation": "This is stronger than a simple leader-vs-follower visibility issue. v1 was the bot RPC target, yet v1 reports unknown while v3 reports expired. That is consistent with kombat_getIntentStatus being derived from local validator admission/event/index state rather than being a consensus query over committed intent receipts."
+    },
+    "metrics_count_caveat": {
+      "observation": "All four validators reported executed_intent_count=4960. v1 produced+received intent counts were 4970, v2 were 4970, v3 were 4970, and v4 were 4970 in the latest sample, but produced vs received distribution is very different per validator.",
+      "interpretation": "The 10-intent gap between produced+received and executed may simply be admitted-but-expired or otherwise terminal-before-execution intents. Do not spend time on that count before resolving the louder orderbook/state_hash divergence. These metrics are useful for liveness, but not sufficient to prove equal trading state."
+    },
+    "mm_log_pattern": "kombat_mm_bot: quote failed market=<market> side=<side> level=<level> policy=<policy> nonce=<nonce> next_nonce=<nonce> current_order=Some(...) replacement_order=... error=intent <id> did not execute before timeout; last_stage=unknown pending_reason=None",
+    "btc_taker_log_pattern": [
+      "submitted bid/ask 100000 lots tif=ioc nonce=1 ... pending_reason=stale_market_data",
+      "clearing terminal pending intent ... stage=rejected rejection=daily_volume_exceeded",
+      "llm unavailable; using testnet cadence fallback: openrouter HTTP 402"
+    ],
+    "taker_config_mismatch": {
+      "AND_TESTNET_TAKER_SIZE_LOTS": 100000,
+      "AND_MAX_VOLUME_PER_DAY_USDC": 5000,
+      "why_this_is_wrong": "100000 BTC lots is around 0.1 BTC. Around an 80k BTC mark, one IOC taker order is roughly 8000 USDC notional, already above the configured 5000 USDC daily policy cap. Repeated cadence orders should use a cap in the millions for this testnet goal."
+    }
+  },
+  "likely_root_causes_or_review_threads": [
+    {
+      "priority": 1,
+      "hypothesis": "MAHI execution/read-model convergence gap",
+      "why": "committed_state_root_hex and commit_log_hash_hex match, but mahi.state_hash_hex and orderbooks differ. The likely shape is typed SingleNodeEngine state outside the executor trie mutating outside committed MAHI block apply, especially order_books, resting_order_mandates, mandates, runtime_events, and trade-history/read-model fields.",
+      "review_focus": [
+        "Audit which state is included in committed_state_root_hex vs mahi.state_hash_hex.",
+        "Audit every mutation of order_books, resting_order_mandates, mandates, runtime_events, and trade-history/read-model fields in chain/crates/node/src/lib.rs and adjacent node modules. Classify each mutation as inside committed MAHI block apply or outside it (admission, mempool, local bridge, replay, status indexing). Any outside-commit mutation is a candidate root cause.",
+        "Specifically grep for order_books, resting_order_mandates, runtime_events.push, apply_order, place_order, replace_order, cancel_order, and execute_intent mutations. Check whether the call stack is reached from submit/admission before consensus commit.",
+        "Add a multi-validator test: one GTC maker intent plus one IOC taker intent through MAHI, then assert orderbook, positions, trade history, runtime events, intent status, committed root, and mahi.state_hash all match across validators."
+      ]
+    },
+    {
+      "priority": 2,
+      "hypothesis": "Intent status is not a consensus/global receipt and bot polling the submitter RPC is unsafe",
+      "why": "The same MM intent id was unknown on the submitter RPC target v1 but expired on v3. That points to kombat_getIntentStatus being local/index-derived rather than consensus-derived. The bot waits on one RPC URL and treats unknown as timeout, so it can stall even when another validator has observed a terminal lifecycle.",
+      "review_focus": [
+        "Determine whether kombat_submitSignedIntent forwards to the current MAHI leader but kombat_getIntentStatus remains local-only.",
+        "Determine whether intent status is derived from committed runtime events, local admission queues, pending intent pools, or a mix. If it is not committed-state derived, document that explicitly and do not let production bots depend on it as a final receipt.",
+        "If yes, expose a cluster-stable/committed intent receipt or make ingress/status recovery forward to the leader/source that admitted the intent. The receipt should be comparable across validators after commit.",
+        "For the bot, consider polling all validators or the public ingress only as a temporary diagnostic, not as a production fix."
+      ]
+    },
+    {
+      "priority": 3,
+      "hypothesis": "Taker policy caps are misconfigured for visible candles",
+      "why": "The taker fleet is configured for 100000 lots but its policy cap is only 5000 USDC/day, producing deterministic daily_volume_exceeded rejections.",
+      "review_focus": [
+        "Raise and_chain_llm_trader_max_volume_per_day_usdc to a value consistent with the intended visible cadence, likely millions for resettable testnet.",
+        "Because policy limits are on-chain, reset/reseed or create fresh policies after changing the cap.",
+        "Keep this separate from the chain convergence issue: fixing the cap will not fix validator orderbook/status disagreement."
+      ]
+    },
+    {
+      "priority": 4,
+      "hypothesis": "The live MM load profile is too broad for isolating correctness",
+      "why": "The MM currently runs 5 markets x 2 sides x 10 levels = 100 lanes with quote_concurrency=20 and quote_interval_ms=30000. This creates noisy status timeouts while the root issue is still unknown.",
+      "review_focus": [
+        "For the next diagnostic, stop the fleet and run one market with one bid/ask lane and one taker below cap.",
+        "Only scale back to five markets and 10 levels after one fill is visible on all validators and in candles."
+      ]
+    }
+  ],
+  "recommended_next_steps_for_next_ai": [
+    "Do not deploy or tune more UI/mobile code until the bot-to-chain-to-candles path is proven.",
+    "Stop the MM and taker services temporarily to freeze the state before running a minimal reproducer.",
+    "Before writing a fix, audit every mutation of order_books, resting_order_mandates, mandates, and runtime_events in chain/crates/node/src/lib.rs and adjacent node modules. Classify each as (a) inside committed MAHI block apply or (b) outside it, such as admission, mempool, local bridge, replay, or status indexing. This read should produce a concrete candidate list rather than another topology hypothesis.",
+    "Run a minimal one-market/two-lane MM or directly submit one GTC maker order through the same signed/session intent path. Then submit one IOC taker order below policy cap.",
+    "For the maker intent and taker intent IDs, poll kombat_getIntentStatus on all four validators every few seconds and record stage, latest_event_seq, block_height, policy_id, nonce.",
+    "After the expected commit, query kombat_getOrderBook, kombat_getTradeHistory, kombat_getAccountTradingState, and relevant events on all four validators. The gate is equality across validators, not just v1 success.",
+    "If equality fails, inspect MAHI committed block replay and read-model state inclusion before changing bot sizing again.",
+    "Once the chain/read-model path is fixed, raise the taker policy cap, reset/reseed, redeploy one taker, prove candles, then redeploy the full five-market fleet.",
+    "Update this experiment series before any core-chain fix lands."
+  ],
+  "local_test_caveat_resolved": {
+    "previous_problem": "This handoff originally warned that broad local MAHI tests were known to hang in this branch/environment.",
+    "resolution": "Superseded by experiment 279: the local MAHI hang was isolated to a self-deadlock in nested with_env_vars calls and fixed with a reentrant per-thread depth counter. The missing MahiBlock.faucets initializers in consensus tests were also fixed.",
+    "current_guidance": "Broad local MAHI tests are no longer a known-bad validation path. They are useful again for regression checks, but they still do not prove the live RFC027 MM/taker/candle path is fixed; keep the item 277 live-read-model divergence as the primary production diagnostic."
+  },
+  "commands_to_reproduce_current_checks": {
+    "consensus_metrics": "python3 - <<'PY'\nimport json, urllib.request\nhosts=[('v1','203.0.113.15'),('v2','203.0.113.17'),('v3','203.0.113.14'),('v4','203.0.113.16')]\nfor name,host in hosts:\n    body=json.dumps({'jsonrpc':'2.0','id':1,'method':'kombat_getConsensusMetrics','params':{}}).encode()\n    req=urllib.request.Request(f'http://{host}:8545', data=body, headers={'content-type':'application/json'})\n    with urllib.request.urlopen(req, timeout=5) as r: data=json.load(r)\n    mahi=(data.get('result') or {}).get('mahi') or {}\n    print(name, {k:mahi.get(k) for k in ['number_of_leaders','commit_log_hash_hex','state_hash_hex','produced_intent_count','received_intent_count','executed_intent_count','execution_pending_count']})\nPY",
+    "orderbook_sample": "python3 - <<'PY'\nimport json, urllib.request\nhosts=[('v1','203.0.113.15'),('v2','203.0.113.17'),('v3','203.0.113.14'),('v4','203.0.113.16')]\nfor name,host in hosts:\n    body=json.dumps({'jsonrpc':'2.0','id':1,'method':'kombat_getOrderBook','params':{'market_id':7,'depth':2}}).encode()\n    req=urllib.request.Request(f'http://{host}:8545', data=body, headers={'content-type':'application/json'})\n    with urllib.request.urlopen(req, timeout=5) as r: data=json.load(r)\n    book=data.get('result') or {}\n    print(name, 'bids', (book.get('bids') or [])[:2], 'asks', (book.get('asks') or [])[:2])\nPY",
+    "intent_status_across_validators": "python3 - <<'PY'\nimport json, urllib.request\nintent='0x8fd9e1a79026449f86afa9b7346bc9bd36b53e4d2534017ca0e81e5f387be5c9'\nhosts=[('v1','203.0.113.15'),('v2','203.0.113.17'),('v3','203.0.113.14'),('v4','203.0.113.16')]\nfor name,host in hosts:\n    body=json.dumps({'jsonrpc':'2.0','id':1,'method':'kombat_getIntentStatus','params':{'intent_id_hex':intent}}).encode()\n    req=urllib.request.Request(f'http://{host}:8545', data=body, headers={'content-type':'application/json'})\n    with urllib.request.urlopen(req, timeout=5) as r: data=json.load(r)\n    print(name, data.get('result'))\nPY",
+    "loadgen_service_tail": "ssh root@203.0.113.10 'date -Is; systemctl is-active kombat-perps-demo-liquidity-bot and-llm-trader and-llm-trader-eth and-llm-trader-sol and-llm-trader-doge and-llm-trader-xrp 2>/dev/null || true; journalctl -u kombat-perps-demo-liquidity-bot -n 40 --no-pager; journalctl -u and-llm-trader -n 40 --no-pager'",
+    "taker_env_check": "ssh root@203.0.113.10 'grep -h \"^AND_\" /etc/and-chain/llm-trader*.env | grep -E \"MARKET_ID|POLICY_ID|MAX_VOLUME|TAKER_SIZE|RPC_URL|STALE\" | sort -u'"
+  },
+  "do_not_repeat": [
+    "Do not call the issue fixed just because Ansible reset/deploy passed.",
+    "Do not call the issue fixed just because all services are active.",
+    "Do not call the issue fixed just because mahi.number_of_leaders=1.",
+    "Do not call the issue fixed just because committed_state_root_hex and mahi.commit_log_hash_hex match.",
+    "Do not assume committed_state_root covers orderbook, runtime_events, trade history, or other typed SingleNodeEngine fields. Verify exactly what is in the root.",
+    "Do not debug this by only looking at validator-1. The failure is cross-validator read-model/status disagreement.",
+    "Do not tune bot order sizes again until the policy cap mismatch and one-intent cross-validator lifecycle are isolated."
+  ],
+  "files_changed_in_related_working_tree": [
+    "chain/crates/loadgen/src/bin/kombat_mm_bot.rs",
+    "chain/crates/node/src/lib.rs",
+    "chain/crates/rpc/src/lib.rs",
+    "chain/crates/rpc/src/main.rs",
+    "chain/deploy/ansible/inventory/group_vars/kombat_live_testnet.yml",
+    "chain/deploy/ansible/inventory/group_vars/kombat_loadgen.yml",
+    "chain/deploy/ansible/playbooks/deploy_llm_trader.yml",
+    "chain/deploy/ansible/playbooks/deploy_market_data.yml",
+    "chain/deploy/ansible/playbooks/deploy_perps_demo_liquidity_bot.yml",
+    "chain/deploy/ansible/templates/kombat-chain.env.j2",
+    "chain/deploy/ansible/templates/kombat-ingress.env.j2",
+    "chain/deploy/ansible/templates/llm-trader.env.j2",
+    "chain/examples/python/llm-trader/llm_trader/agent.py",
+    "chain/examples/python/llm-trader/llm_trader/__main__.py",
+    "chain/sdk/python/and_chain_sdk/client.py",
+    "chain/sdk/python/and_chain_sdk/models.py",
+    "docs/v1/rfcs/027-formal-market-maker-program.md",
+    "perps-dex-ui/src/App.tsx",
+    "perps-dex-ui/src/LiveTradingViewChart.tsx"
+  ],
+  "rfc042_note": {
+    "recommendation": "Do not merge RFC042 durable persistence into this debugging slice unless explicitly requested after the minimal reproducer is understood.",
+    "reason_1": "It changes overlapping core paths and the submitted RFC042 note says live paths are not yet cut over to durable variants, so it is likely to add noise while diagnosing MM/taker/candle correctness.",
+    "reason_2": "RFC042's EngineCanonicalRecord deliberately scopes the canonical engine snapshot with WAL/derived fields zeroed. If mahi.state_hash_hex includes runtime_events or other fields RFC042 treats as derived, landing RFC042 hydrate/export semantics could silently change what cross-validator equality means.",
+    "reason_3": "RFC042 Phase 6/7 durable helpers such as produce_empty_block_durable, submit_intent_durable, and apply_durable_commit_plan are defined but production block-commit and admission paths still call in-memory variants. Wiring them in would touch the exact admission/commit paths under suspicion here."
+  }
+}

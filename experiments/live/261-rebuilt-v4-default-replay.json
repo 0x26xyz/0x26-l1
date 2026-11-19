@@ -1,0 +1,187 @@
+{
+  "id": 261,
+  "name": "rebuilt-v4-default-replay",
+  "status": "kept diagnostic; not green",
+  "date": "2026-04-27",
+  "base_results": [
+    {
+      "decision_log_item": 251,
+      "committed_tps": 77666.8,
+      "artifact": "/tmp/and-live-251-v1-nginx-stopped-100k-60s",
+      "finding": "best clean exact-binary live reference"
+    },
+    {
+      "decision_log_item": 258,
+      "committed_tps": 35953.1,
+      "artifact": "/tmp/and-live-258-post-reboot-item251-replay-100k-60s",
+      "finding": "post-reboot exact item251 replay; physical validator-4 still collapsed"
+    },
+    {
+      "decision_log_item": 260,
+      "committed_tps": 42216.4,
+      "artifact": "/tmp/and-live-260-packed-v4-on-v3-v2v3-12ingress-100k-60s",
+      "finding": "packed topology removed physical validator-4 but under-delivered load"
+    }
+  ],
+  "hypothesis": "After item259 proved physical validator-4 was pathological and the host was OS-reinstalled, restoring the default four-host topology and replaying the exact item251 binary/config should recover item251-class throughput if the old host substrate was the dominant regression.",
+  "files": [
+    "chain/experiments/live/261-rebuilt-v4-default-replay.json",
+    "chain/THROUGHPUT_DECISION_LOG.md"
+  ],
+  "git_environment_anchors": {
+    "result_tag": "chain-exp-261-rebuilt-v4-default-replay-result",
+    "replay_binary": "/tmp/kombat_chain-live-dd022982",
+    "replay_binary_sha256": "dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd",
+    "inventory": "chain/deploy/ansible/inventory/testnet.yml",
+    "pre_run_head_commit": "a6320ce84"
+  },
+  "topology": {
+    "validator-1": {
+      "physical_host": "203.0.113.15",
+      "rpc_port": 8545,
+      "ingress_ports": [8645, 8646, 8647]
+    },
+    "validator-2": {
+      "physical_host": "203.0.113.17",
+      "rpc_port": 8545,
+      "ingress_ports": [8645, 8646, 8647]
+    },
+    "validator-3": {
+      "physical_host": "203.0.113.14",
+      "rpc_port": 8545,
+      "ingress_ports": [8645, 8646, 8647]
+    },
+    "validator-4": {
+      "physical_host": "203.0.113.16",
+      "rpc_port": 8545,
+      "ingress_ports": [8645, 8646, 8647],
+      "host_note": "OS reinstalled before this replay; SSH host key refreshed"
+    }
+  },
+  "pre_run_notes": [
+    "Removed the stale SSH known_hosts entry for 203.0.113.16 after the OS reinstall and accepted the new host key.",
+    "Confirmed SSH root access to 203.0.113.16 after the user installed the local public key.",
+    "Stopped and disabled packed-topology leftovers: kombat-chain-v4 and kombat-chain-ingress4 through kombat-chain-ingress6.",
+    "Verified the default topology: one kombat-chain service and three ingress services per VPS.",
+    "Verified all four validators run sha256 dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd."
+  ],
+  "commands": [
+    "LOADTEST_OUTPUT_DIR=/tmp/and-live-261-rebuilt-v4-default-100k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=1 LOADTEST_FAIL_ON_ERRORS=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 100000 60",
+    "bash chain/scripts/live_network_status.sh /tmp/and-live-testnet",
+    "curl kombat_getConsensusMetrics on all four validator RPC endpoints",
+    "curl kombat_getStateRootAtHeight(height=100) on all four validator RPC endpoints",
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) KOMBAT_BINARY_PATH=/tmp/kombat_chain-live-dd022982 .venv/bin/ansible-playbook -i inventory/testnet.yml playbooks/verify.yml"
+  ],
+  "result": {
+    "artifact": "/tmp/and-live-261-rebuilt-v4-default-100k-60s",
+    "duration_secs": 60,
+    "committed_total": 3285739,
+    "committed_tps": 54762.3,
+    "ok_total": 3702208,
+    "accepted_rps": 61703.5,
+    "measured_rps_total": 57383.7,
+    "rpc_err_total": 0,
+    "nonce_err_total": 0,
+    "net_err_total": 0,
+    "endpoint_rps": {
+      "validator-1": [1970.5, 1988.9, 2023.7],
+      "validator-2": [7478.3, 7436.8, 7420.1],
+      "validator-3": [7372.1, 7481.1, 7376.3],
+      "validator-4": [2313.1, 2295.5, 2227.3]
+    },
+    "endpoint_committed": {
+      "validator-1": [130328, 130416, 132984],
+      "validator-2": [410813, 410848, 412944],
+      "validator-3": [403776, 405808, 404806],
+      "validator-4": [149280, 148320, 145416]
+    },
+    "common_height_state_root": {
+      "height": 100,
+      "block_hash_hex": "0x0ba296837547f8cf9fc16b4a1b2e578e52dc33dd5ff5fe85daf629ad4e4b2ca8",
+      "state_root_hex": "0x51d276cb8ff09c464d6d4a4a0a6b306b6fd1328a8460bf42a254b4da9203b53e",
+      "matched_all_validators": true
+    },
+    "mahi_metrics": {
+      "commit_log_hash_hex": "0x6d31225515ca0efde24132c4d6316d62ce262380e32023d2bf26373964e39994",
+      "committed_block_count": 796,
+      "executed_intent_count": 3702808,
+      "all_validators_match": true,
+      "sigverify_p50_p90_max_ms": {
+        "validator-1": [224, 455, 1391],
+        "validator-2": [155, 300, 528],
+        "validator-3": [159, 325, 732],
+        "validator-4": [179, 308, 747]
+      },
+      "inbound_accept_p90_max_ms": {
+        "validator-1": [48, 156],
+        "validator-2": [18, 79],
+        "validator-3": [35, 132],
+        "validator-4": [28, 61]
+      },
+      "commit_execution_batch_p50_p90_max_ms": {
+        "validator-1": [240, 370, 661],
+        "validator-2": [188, 300, 417],
+        "validator-3": [205, 355, 526],
+        "validator-4": [168, 241, 433]
+      }
+    },
+    "pre_admitted_pool_items_after_drain": {
+      "validator-1": 0,
+      "validator-2": 1184,
+      "validator-3": 0,
+      "validator-4": 0
+    },
+    "pre_admitted_pool_accepted": {
+      "validator-1": 925008,
+      "validator-2": 926624,
+      "validator-3": 925960,
+      "validator-4": 926400
+    },
+    "systemd_chain_state": {
+      "validator-1": {
+        "active_state": "active",
+        "sub_state": "running",
+        "n_restarts": 0,
+        "tasks_current": 35,
+        "cpu_usage_nsec": 477822496000
+      },
+      "validator-2": {
+        "active_state": "active",
+        "sub_state": "running",
+        "n_restarts": 1,
+        "tasks_current": 35,
+        "cpu_usage_nsec": 235608046000
+      },
+      "validator-3": {
+        "active_state": "active",
+        "sub_state": "running",
+        "n_restarts": 1,
+        "tasks_current": 35,
+        "cpu_usage_nsec": 280701936000
+      },
+      "validator-4": {
+        "active_state": "active",
+        "sub_state": "running",
+        "n_restarts": 0,
+        "tasks_current": 35,
+        "cpu_usage_nsec": 469727651000
+      }
+    },
+    "classification": "The rebuilt validator-4 host improves the default topology from the failed exact replays and packed workaround, while preserving correctness, but it does not recover item251-class green TPS. Endpoint delivery remains strongly skewed: validators 2/3 deliver about 7.4k RPS per ingress, while validator-1 and rebuilt validator-4 deliver only about 2.0k and 2.3k RPS per ingress."
+  },
+  "success_criteria": {
+    "committed_tps_recovery_floor": 76000,
+    "zero_rpc_errors": true,
+    "zero_nonce_errors": true,
+    "zero_network_errors": true,
+    "common_height_state_roots_match": true,
+    "mahi_commit_logs_match": true,
+    "pre_admitted_pools_drain_to_zero": true
+  },
+  "decision": {
+    "status": "kept diagnostic; not green",
+    "reason": "The rebuilt validator-4 default topology is correct and materially better than the broken-host replays, but official committed TPS is still only 54,762.3, below the 76k green recovery floor and item251's 77,666.8 TPS. The remaining bottleneck is not consensus divergence; it is host/ingress delivery skew, with validators 1 and 4 under-delivering relative to validators 2 and 3.",
+    "next_move": "Recover green by controlling host roles and load delivery rather than protocol micro-tuning. Keep this exact result tagged, then run a codified topology/loadgen recovery slice that either removes weak ingress hosts from the driven set or adds dedicated external loadgen/ingress capacity while preserving the four-validator consensus set."
+  },
+  "rollback": "Default inventory/testnet.yml topology is active. The exact item251 binary remains deployed on all four hosts."
+}

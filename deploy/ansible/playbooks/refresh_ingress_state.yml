@@ -1,0 +1,28 @@
+- name: Refresh Kombat live testnet ingress state from bootstrap validator
+  hosts: kombat_live_testnet
+  gather_facts: false
+  become: true
+  vars:
+    ingress_service_names: "{{ and_chain_ingress_services | map(attribute='name') | list }}"
+    ingress_ports: "{{ and_chain_ingress_services | map(attribute='port') | list }}"
+  tasks:
+    - name: Restart ingress services after validator seeding
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: restarted
+      loop: "{{ ingress_service_names }}"
+
+    - name: Wait for refreshed ingress RPC ports
+      ansible.builtin.shell: |
+        set -euo pipefail
+        curl --max-time 3 -sS -H 'content-type: application/json' \
+          --data '{"jsonrpc":"2.0","method":"kombat_chainInfo","params":{},"id":1}' \
+          http://127.0.0.1:{{ item }} | grep -q '"result"'
+      args:
+        executable: /bin/bash
+      register: refreshed_ingress_rpc_check
+      changed_when: false
+      retries: 30
+      delay: 2
+      until: refreshed_ingress_rpc_check.rc == 0
+      loop: "{{ ingress_ports }}"

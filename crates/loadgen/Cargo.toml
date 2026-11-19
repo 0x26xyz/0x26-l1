@@ -1,0 +1,31 @@
+[package]
+name = "kombat-chain-loadgen"
+edition.workspace = true
+version.workspace = true
+license-file = "../../LICENSE"
+description = "Load generator for the & chain JSON-RPC API."
+publish = false
+
+[[bin]]
+name = "kombat_loadgen"
+path = "src/main.rs"
+
+[[bin]]
+name = "kombat_mm_bot"
+path = "src/bin/kombat_mm_bot.rs"
+
+[[bin]]
+name = "kombat_funding_arb_bot"
+path = "src/bin/kombat_funding_arb_bot.rs"
+
+[dependencies]
+and-chain-sdk = { git = "https://github.com/0x26xyz/0x26-rust-sdk", tag = "v0.1.0" }
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+
+[lints]
+workspace = true

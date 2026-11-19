@@ -1,0 +1,110 @@
+{
+  "id": 253,
+  "name": "mahi-overload-backpressure",
+  "status": "binned",
+  "date": "2026-04-26",
+  "base_results": [
+    {
+      "decision_log_item": 219,
+      "committed_tps": 85382.0,
+      "finding": "known green live reference"
+    },
+    {
+      "decision_log_item": 251,
+      "committed_tps": 77666.8,
+      "finding": "current clean live reference after nginx isolation"
+    },
+    {
+      "decision_log_item": 252,
+      "committed_tps": 18711.0,
+      "finding": "six-ingress healthy-host topology accepted 5.28M requests but left Mahi pools full and diverged state roots"
+    }
+  ],
+  "hypothesis": "Mahi observer ingress currently reports async relay success before the owner has durable capacity. Under overload, accepted work can outrun owner pre-admitted drain, fill bounded owner pools, and break the benchmark correctness invariant. Add bounded observer relay admission and owner-side pre-admitted high-water retry semantics so overload becomes client-visible retry/backpressure instead of accepted-but-uncommitted backlog.",
+  "planned_files": [
+    "chain/crates/rpc/src/lib.rs",
+    "chain/deploy/ansible/inventory/group_vars/kombat_live_testnet.yml",
+    "chain/deploy/ansible/playbooks/verify.yml",
+    "chain/deploy/ansible/templates/kombat-chain.env.j2",
+    "chain/deploy/ansible/templates/kombat-ingress.env.j2",
+    "chain/experiments/live/253-mahi-overload-backpressure.json",
+    "chain/THROUGHPUT_DECISION_LOG.md"
+  ],
+  "planned_config": {
+    "KOMBAT_MAHI_OBSERVER_RELAY_QUEUE_MAX_ITEMS": 65536,
+    "KOMBAT_MAHI_PRE_ADMITTED_BACKPRESSURE_ITEMS": 393216,
+    "rationale": "Keep enough buffer for the item-251 clean topology while making overload visible before each owner reaches the hard 524,288-item pool cap."
+  },
+  "planned_tests": [
+    "cargo test -p kombat-chain-rpc --manifest-path chain/Cargo.toml mahi_owner_relay",
+    "cargo test -p kombat-chain-rpc --manifest-path chain/Cargo.toml mahi_observer_async_relay_backpressures_when_queue_full",
+    "cargo test -p kombat-chain-rpc --manifest-path chain/Cargo.toml network_relay_intents_in_mahi_mode_populates_pre_admitted_pool",
+    "cargo test -p kombat-chain-rpc --manifest-path chain/Cargo.toml mahi_pre_admitted_pool_full_returns_retry_without_nonce_hole"
+  ],
+  "planned_live_steps": [
+    {
+      "description": "build release binary from the tagged experiment commit",
+      "command": "cargo build --release -p kombat-chain-rpc --manifest-path chain/Cargo.toml"
+    },
+    {
+      "description": "deploy default three-ingress topology with committed backpressure env",
+      "command": "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) KOMBAT_BINARY_PATH=chain/target/release/kombat_chain .venv/bin/ansible-playbook playbooks/deploy.yml"
+    },
+    {
+      "description": "wipe state and restart default live topology",
+      "command": "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible kombat_live_testnet -m shell -a 'systemctl stop kombat-chain-ingress3 kombat-chain-ingress2 kombat-chain-ingress kombat-chain && rm -rf /var/lib/and-chain && mkdir -p /var/lib/and-chain/snapshots && chown -R and-chain:and-chain /var/lib/and-chain && systemctl start kombat-chain && systemctl start kombat-chain-ingress kombat-chain-ingress2 kombat-chain-ingress3'"
+    },
+    {
+      "description": "run current clean reference topology",
+      "artifact": "/tmp/and-live-253-backpressure-default-100k-60s",
+      "command": "LOADTEST_OUTPUT_DIR=/tmp/and-live-253-backpressure-default-100k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=1 LOADTEST_FAIL_ON_ERRORS=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 100000 60"
+    }
+  ],
+  "success_criteria": {
+    "unit_tests_pass": true,
+    "default_topology_request_errors": 0,
+    "default_topology_state_roots_match_at_common_height": true,
+    "default_topology_pools_drained": true,
+    "default_topology_tps_floor": 76000,
+    "accepted_work_semantics": "new overload tests prove async observer relay reports retry when its bounded relay queue cannot accept more work, and owner relay returns retry at the configured pre-admitted high-water mark"
+  },
+  "rollback": {
+    "disable_new_behavior": "set KOMBAT_MAHI_OBSERVER_RELAY_QUEUE_MAX_ITEMS and KOMBAT_MAHI_PRE_ADMITTED_BACKPRESSURE_ITEMS to 524288 or revert the experiment commit",
+    "live_topology": "redeploy default three-ingress Ansible topology and wipe /var/lib/and-chain before the next run"
+  },
+  "result": {
+    "status": "binned",
+    "artifact": "/tmp/and-live-253-backpressure-default-100k-60s",
+    "code_commit": "f900dff94",
+    "tags": [
+      "chain-exp-253-mahi-overload-backpressure-plan",
+      "chain-exp-253-mahi-overload-backpressure-code"
+    ],
+    "deployed_linux_binary_sha256": "e1d582c1614b6bc86e5a13771e5194e98bb8bc0eb4bdda463528ae6352cdceec",
+    "discarded_invalid_binary_sha256": "3bc7dd20",
+    "load": {
+      "target_rps": 100000,
+      "duration_secs": 60,
+      "writers_per_endpoint": 32,
+      "batch_size": 8,
+      "pipeline_depth": 1,
+      "fail_on_errors": true
+    },
+    "observed": {
+      "accepted_ok": 3288376,
+      "rpc_errors": 2304,
+      "nonce_errors": 0,
+      "network_errors": 0,
+      "aggregate_measured_rps": 49540.7,
+      "error": "jsonrpc code=-32029 message=mahi owner relay queue full; retry",
+      "mahi_pre_admitted_pool_items_after_run": {
+        "validator_1": 249936,
+        "validator_2": 230536,
+        "validator_3": 227400,
+        "validator_4": 232184
+      }
+    },
+    "reason": "The 65,536-item observer relay queue bound made overload explicit, but it also throttled the default 12-endpoint green topology and produced client-visible retries. The code path is useful, but the live default thresholds are too low.",
+    "next_move": "Raise the default live backpressure thresholds above normal operating burst size in a separate tagged experiment, redeploy, wipe, and rerun the 100k/60s default topology."
+  }
+}

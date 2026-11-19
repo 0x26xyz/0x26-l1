@@ -1,0 +1,24 @@
+[package]
+name = "kombat-chain-market-data"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+publish = false
+
+[[bin]]
+name = "kombat_market_data"
+path = "src/main.rs"
+
+[dependencies]
+and-chain-sdk = { git = "https://github.com/0x26xyz/0x26-rust-sdk", tag = "v0.1.0" }
+anyhow = "1"
+axum = { version = "0.8.1", features = ["http1", "json", "tokio"] }
+clap = { version = "4", features = ["derive", "env"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
+tower-http = { version = "0.6.2", features = ["cors"] }
+
+[lints]
+workspace = true

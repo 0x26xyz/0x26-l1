@@ -1,0 +1,24 @@
+Copyright (c) 2026 Wayne Douglas and the 0x26 Chain authors.
+All rights reserved.
+
+This repository is published as the research artifact for the paper
+"0x26 Chain: Execution Contracts for a DAG-Ordered Trading Ledger".
+
+Permission is granted to any person to download, read, build, and run the
+contents of this repository for the purposes of evaluating, reproducing, and
+citing the results of that paper, and for other non-commercial research and
+teaching.
+
+No other rights are granted. In particular, no permission is granted to
+redistribute the contents, to distribute modified versions, or to use them in
+a commercial product or service, without prior written permission from the
+copyright holders.
+
+Portions derived from third-party work remain subject to their own licence
+terms. See NOTICE.
+
+THE CONTENTS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE CONTENTS OR THEIR USE.

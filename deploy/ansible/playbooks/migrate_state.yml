@@ -1,0 +1,152 @@
+- name: Migrate Kombat live testnet chain state
+  hosts: kombat_live_testnet
+  gather_facts: false
+  become: true
+  vars:
+    validator_service_name: "{{ and_chain_validator_service_name | default('kombat-chain') }}"
+    ingress_service_names: "{{ and_chain_ingress_services | map(attribute='name') | list }}"
+    chain_services: "{{ [validator_service_name] + ingress_service_names }}"
+    migration_report_dir: "{{ and_chain_state_dir }}/migration-reports"
+    migration_report_prefix: "{{ migration_report_dir }}/persistence-migration"
+    chain_binary: "{{ and_chain_install_root }}/bin/kombat_chain"
+    source_backend_path: "{{ and_chain_state_dir }}/state.redb"
+  tasks:
+    - name: Skip hosts without durable redb state
+      ansible.builtin.meta: end_host
+      when: (and_chain_state_backend | default('memory')) != 'redb'
+
+    - name: Check source backend file exists before stopping services
+      ansible.builtin.stat:
+        path: "{{ source_backend_path }}"
+      register: source_backend_stat
+
+    - name: Require existing source backend for migration
+      ansible.builtin.assert:
+        that:
+          - source_backend_stat.stat.exists
+          - source_backend_stat.stat.isreg | default(false)
+        fail_msg: >-
+          Refusing persistence migration because {{ source_backend_path }} is missing.
+          This playbook is non-resettable and must not start services into fresh state.
+
+    - name: Stop chain services before migration
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: stopped
+      loop: "{{ chain_services }}"
+
+    - name: Clear failed chain service state
+      ansible.builtin.command: "systemctl reset-failed {{ item }}"
+      changed_when: false
+      failed_when: false
+      loop: "{{ chain_services }}"
+
+    - name: Check persistence fingerprint
+      ansible.builtin.command:
+        argv:
+          - "{{ chain_binary }}"
+          - check-persistence-fingerprint
+          - --data-dir
+          - "{{ and_chain_state_dir }}"
+          - --format
+          - json
+      register: fingerprint_check
+      changed_when: false
+      failed_when: fingerprint_check.rc not in [0, 1]
+
+    - name: Parse fingerprint check
+      ansible.builtin.set_fact:
+        fingerprint_check_json: "{{ fingerprint_check.stdout | from_json }}"
+
+    - name: Ensure migration report directory exists
+      ansible.builtin.file:
+        path: "{{ migration_report_dir }}"
+        state: directory
+        owner: "{{ and_chain_user }}"
+        group: "{{ and_chain_group }}"
+        mode: "0750"
+      when: fingerprint_check_json.result == 'mismatch'
+
+    - name: Run persistence migration dry-run
+      ansible.builtin.command:
+        argv:
+          - "{{ chain_binary }}"
+          - migrate-state
+          - --data-dir
+          - "{{ and_chain_state_dir }}"
+          - --to
+          - current
+          - --dry-run
+          - --format
+          - json
+          - --report
+          - "{{ migration_report_prefix }}.dry-run.json"
+      register: migration_dry_run
+      changed_when: false
+      failed_when: migration_dry_run.rc != 0
+      when: fingerprint_check_json.result == 'mismatch'
+
+    - name: Run persistence migration
+      ansible.builtin.command:
+        argv:
+          - "{{ chain_binary }}"
+          - migrate-state
+          - --data-dir
+          - "{{ and_chain_state_dir }}"
+          - --to
+          - current
+          - --confirm
+          - migrate-state
+          - --format
+          - json
+          - --report
+          - "{{ migration_report_prefix }}.apply.json"
+      register: migration_apply
+      changed_when: migration_apply.rc == 0
+      failed_when: migration_apply.rc != 0
+      when: fingerprint_check_json.result == 'mismatch'
+
+    - name: Verify migrated or compatible persistence fingerprint
+      ansible.builtin.command:
+        argv:
+          - "{{ chain_binary }}"
+          - check-persistence-fingerprint
+          - --data-dir
+          - "{{ and_chain_state_dir }}"
+          - --format
+          - json
+      register: fingerprint_verify
+      changed_when: false
+      failed_when: fingerprint_verify.rc != 0
+
+    - name: Ensure migration report directory exists for hydration validation
+      ansible.builtin.file:
+        path: "{{ migration_report_dir }}"
+        state: directory
+        owner: "{{ and_chain_user }}"
+        group: "{{ and_chain_group }}"
+        mode: "0750"
+
+    - name: Hydrate backend with target binary before service start
+      ansible.builtin.command:
+        argv:
+          - "{{ chain_binary }}"
+          - migrate-state
+          - --data-dir
+          - "{{ and_chain_state_dir }}"
+          - --to
+          - current
+          - --dry-run
+          - --format
+          - json
+          - --report
+          - "{{ migration_report_prefix }}.hydrate-check.json"
+      register: hydration_check
+      changed_when: false
+      failed_when: hydration_check.rc != 0
+
+    - name: Start chain services after migration
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: started
+      loop: "{{ chain_services }}"

@@ -1,0 +1,137 @@
+- name: Deploy Kombat market-data services
+  hosts: "{{ lookup('env', 'KOMBAT_MARKET_DATA_HOSTS') | default('kombat_market_data', true) }}"
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../inventory/group_vars/kombat_live_testnet.yml
+  vars:
+    market_data_services:
+      - "{{ and_chain_questdb_service_name }}"
+      - "{{ and_chain_market_data_service_name }}"
+  pre_tasks:
+    - name: Check local kombat_market_data binary
+      ansible.builtin.stat:
+        path: "{{ and_chain_market_data_binary_path }}"
+      delegate_to: localhost
+      become: false
+      register: local_market_data_binary
+      run_once: true
+
+    - name: Require local kombat_market_data binary
+      ansible.builtin.assert:
+        that:
+          - local_market_data_binary.stat.exists
+          - local_market_data_binary.stat.executable
+        fail_msg: "Build the Linux kombat_market_data binary and set KOMBAT_MARKET_DATA_BINARY_PATH."
+      run_once: true
+
+  tasks:
+    - name: Check whether Docker is already installed for QuestDB
+      ansible.builtin.shell: command -v docker
+      register: questdb_docker_check
+      changed_when: false
+      failed_when: false
+
+    - name: Ensure Docker is installed for QuestDB
+      ansible.builtin.apt:
+        name: docker.io
+        state: present
+        update_cache: true
+      when: questdb_docker_check.rc != 0
+
+    - name: Ensure Docker service is running
+      ansible.builtin.systemd_service:
+        name: docker
+        enabled: true
+        state: started
+
+    - name: Ensure service user exists
+      ansible.builtin.user:
+        name: "{{ and_chain_user }}"
+        system: true
+        home: "{{ and_chain_user_home | default('/var/lib/and-chain') }}"
+        shell: /usr/sbin/nologin
+
+    - name: Ensure market-data directories exist
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: "{{ and_chain_install_root }}", owner: root, group: root, mode: "0755" }
+        - { path: "{{ and_chain_install_root }}/bin", owner: root, group: root, mode: "0755" }
+        - { path: "{{ and_chain_config_dir }}", owner: root, group: root, mode: "0755" }
+        - { path: "{{ and_chain_state_dir }}", owner: "{{ and_chain_user }}", group: "{{ and_chain_group }}", mode: "0755" }
+        - { path: "{{ and_chain_questdb_data_dir }}", owner: root, group: root, mode: "0755" }
+
+    - name: Install kombat_market_data binary
+      ansible.builtin.copy:
+        src: "{{ and_chain_market_data_binary_path }}"
+        dest: "{{ and_chain_install_root }}/bin/kombat_market_data"
+        owner: root
+        group: root
+        mode: "0755"
+      notify: Restart market-data services
+
+    - name: Install market-data environment
+      ansible.builtin.copy:
+        dest: "{{ and_chain_market_data_env_file }}"
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          KOMBAT_MARKET_DATA_RPC_URL={{ and_chain_market_data_rpc_url }}
+          KOMBAT_MARKET_DATA_QUESTDB_URL=http://127.0.0.1:{{ and_chain_questdb_http_port }}
+          KOMBAT_MARKET_DATA_BIND={{ and_chain_market_data_bind_host }}:{{ and_chain_market_data_port }}
+          KOMBAT_MARKET_DATA_SOURCE={{ and_chain_market_data_source }}
+          KOMBAT_MARKET_DATA_POLL_MS={{ and_chain_market_data_poll_ms }}
+          KOMBAT_MARKET_DATA_BATCH_LIMIT={{ and_chain_market_data_batch_limit }}
+          KOMBAT_MARKET_DATA_INTERVALS={{ and_chain_market_data_intervals }}
+      notify: Restart market-data services
+
+    - name: Install QuestDB service
+      ansible.builtin.template:
+        src: ../templates/kombat-questdb.service.j2
+        dest: "/etc/systemd/system/{{ and_chain_questdb_service_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart market-data services
+
+    - name: Install market-data service
+      ansible.builtin.template:
+        src: ../templates/kombat-market-data.service.j2
+        dest: "/etc/systemd/system/{{ and_chain_market_data_service_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart market-data services
+
+    - name: Reload systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+    - name: Enable market-data services
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: true
+      loop: "{{ market_data_services }}"
+
+    - name: Apply pending restarts before final running check
+      ansible.builtin.meta: flush_handlers
+
+    - name: Ensure market-data services are running
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: started
+      loop: "{{ market_data_services }}"
+
+  handlers:
+    - name: Restart market-data services
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: restarted
+        daemon_reload: true
+      loop: "{{ market_data_services }}"

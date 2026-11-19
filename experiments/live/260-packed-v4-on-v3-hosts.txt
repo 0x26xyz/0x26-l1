@@ -1,0 +1,5 @@
+name	ssh_host	public_rpc_url
+validator-1	root@203.0.113.15	http://203.0.113.15:8545
+validator-2	root@203.0.113.17	http://203.0.113.17:8545
+validator-3	root@203.0.113.14	http://203.0.113.14:8545
+validator-4	root@203.0.113.14	http://203.0.113.14:8548

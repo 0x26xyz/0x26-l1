@@ -1,0 +1,111 @@
+{
+  "id": 266,
+  "name": "local-liveflags-replay",
+  "status": "kept diagnostic; local green at 100k, relay cliff above 100k",
+  "date": "2026-04-27",
+  "scope": "local harness only",
+  "branch": "main",
+  "code_commit": "9f192eccfb00d21b82c498f05b5f648ab2bffda4",
+  "binary_hashes": {
+    "kombat_chain_sha256": "1705f7e284062ad558f1728cf7cb2ea89a83ef922787b7e182c6ad5f6c46ed21",
+    "kombat_loadgen_sha256": "ffb0ec858327eea0a87ed2076be1c9e2366aa00e7bbc176d26072664e78e954f"
+  },
+  "hypothesis": "The latest local harness should recover item219/item251-class throughput when run with the same Mahi live flags used by Ansible. A no-live-flags run is expected to be misleading because it does not exercise observer async owner relay or peer transport.",
+  "files": [
+    "chain/experiments/local/266-local-liveflags-replay.json",
+    "chain/THROUGHPUT_DECISION_LOG.md"
+  ],
+  "common_env": {
+    "LOCAL_CLUSTER_SKIP_BUILD": "1",
+    "AUTO_MAX_ITEMS": "5000",
+    "LOCAL_CLUSTER_ENABLE_INGRESS": "1",
+    "LOCAL_CLUSTER_PEER_TRANSPORT": "1",
+    "LOADTEST_TARGET_VALIDATOR": "ingress",
+    "LOADTEST_BATCH_SIZE": "8",
+    "LOADTEST_PIPELINE_DEPTH": "32",
+    "KEEP_LOG": "1",
+    "KOMBAT_CONSENSUS": "mahi",
+    "KOMBAT_MAHI_COMMIT_RULE": "mahi",
+    "KOMBAT_MAHI_OBSERVER_ASYNC_RELAY": "1",
+    "KOMBAT_MAHI_ASYNC_BLOCK_BROADCAST": "true",
+    "KOMBAT_MAHI_MERGED_EXECUTION_BATCH": "8",
+    "KOMBAT_MAHI_OWNER_RELAY_REDUNDANCY": "2",
+    "KOMBAT_MAHI_OWNER_RELAY_LAG_ROUNDS": "256"
+  },
+  "commands": [
+    "cargo build --release -p kombat-chain-rpc --bin kombat_chain -p kombat-chain-loadgen --bin kombat_loadgen --manifest-path chain/Cargo.toml",
+    "AUTO_MAX_ITEMS=5000 LOCAL_CLUSTER_ENABLE_INGRESS=1 LOADTEST_TARGET_VALIDATOR=ingress LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=32 KEEP_LOG=1 LOCAL_CLUSTER_OUTPUT_DIR=/tmp/codex-exp-local-latest-main-9f192eccf-100k-10s bash chain/scripts/loadtest_local_cluster.sh 32 100000 10",
+    "LOCAL_CLUSTER_SKIP_BUILD=1 AUTO_MAX_ITEMS=5000 LOCAL_CLUSTER_ENABLE_INGRESS=1 LOCAL_CLUSTER_PEER_TRANSPORT=1 LOADTEST_TARGET_VALIDATOR=ingress LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=32 KEEP_LOG=1 KOMBAT_CONSENSUS=mahi KOMBAT_MAHI_COMMIT_RULE=mahi KOMBAT_MAHI_OBSERVER_ASYNC_RELAY=1 KOMBAT_MAHI_ASYNC_BLOCK_BROADCAST=true KOMBAT_MAHI_MERGED_EXECUTION_BATCH=8 KOMBAT_MAHI_OWNER_RELAY_REDUNDANCY=2 KOMBAT_MAHI_OWNER_RELAY_LAG_ROUNDS=256 LOCAL_CLUSTER_OUTPUT_DIR=/tmp/codex-exp-local-liveflags-main-9f192eccf-100k-10s bash chain/scripts/loadtest_local_cluster.sh 32 100000 10",
+    "LOCAL_CLUSTER_SKIP_BUILD=1 AUTO_MAX_ITEMS=5000 LOCAL_CLUSTER_ENABLE_INGRESS=1 LOCAL_CLUSTER_PEER_TRANSPORT=1 LOADTEST_TARGET_VALIDATOR=ingress LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=32 KEEP_LOG=1 KOMBAT_CONSENSUS=mahi KOMBAT_MAHI_COMMIT_RULE=mahi KOMBAT_MAHI_OBSERVER_ASYNC_RELAY=1 KOMBAT_MAHI_ASYNC_BLOCK_BROADCAST=true KOMBAT_MAHI_MERGED_EXECUTION_BATCH=8 KOMBAT_MAHI_OWNER_RELAY_REDUNDANCY=2 KOMBAT_MAHI_OWNER_RELAY_LAG_ROUNDS=256 LOCAL_CLUSTER_OUTPUT_DIR=/tmp/codex-exp-local-liveflags-main-9f192eccf-120k-10s bash chain/scripts/loadtest_local_cluster.sh 32 120000 10",
+    "LOCAL_CLUSTER_SKIP_BUILD=1 AUTO_MAX_ITEMS=5000 LOCAL_CLUSTER_ENABLE_INGRESS=1 LOCAL_CLUSTER_PEER_TRANSPORT=1 LOADTEST_TARGET_VALIDATOR=ingress LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=32 KEEP_LOG=1 KOMBAT_CONSENSUS=mahi KOMBAT_MAHI_COMMIT_RULE=mahi KOMBAT_MAHI_OBSERVER_ASYNC_RELAY=1 KOMBAT_MAHI_ASYNC_BLOCK_BROADCAST=true KOMBAT_MAHI_MERGED_EXECUTION_BATCH=8 KOMBAT_MAHI_OWNER_RELAY_REDUNDANCY=2 KOMBAT_MAHI_OWNER_RELAY_LAG_ROUNDS=256 LOCAL_CLUSTER_OUTPUT_DIR=/tmp/codex-exp-local-liveflags-main-9f192eccf-150k-10s bash chain/scripts/loadtest_local_cluster.sh 32 150000 10"
+  ],
+  "results": [
+    {
+      "label": "no-live-flags-100k",
+      "artifact": "/tmp/codex-exp-local-latest-main-9f192eccf-100k-10s",
+      "target_rps": 100000,
+      "duration_secs": 10,
+      "achieved_rps_measured": 88057.6,
+      "rpc_err": 935678,
+      "committed_summary_total": 300544,
+      "measured_avg_instant_tps": 7738.249696339927,
+      "measured_peak_instant_tps": 12989.49499247316,
+      "classification": "fail mode; local harness omitted live Mahi flags and hit local_submit_queue_full"
+    },
+    {
+      "label": "liveflags-100k-green",
+      "artifact": "/tmp/codex-exp-local-liveflags-main-9f192eccf-100k-10s",
+      "target_rps": 100000,
+      "duration_secs": 10,
+      "achieved_rps_measured": 100032.8,
+      "rpc_err": 0,
+      "net_err": 0,
+      "nonce_err": 0,
+      "latency_ms": {
+        "p50": 3.422,
+        "p90": 25.498,
+        "p99": 77.172
+      },
+      "committed_summary_total": 1498872,
+      "measured_avg_instant_tps": 98453.88679647342,
+      "measured_peak_instant_tps": 114227.36613635269,
+      "post_load_converged": true,
+      "classification": "success mode; latest code is locally green when run with live-equivalent Mahi flags"
+    },
+    {
+      "label": "liveflags-120k-relay-cliff",
+      "artifact": "/tmp/codex-exp-local-liveflags-main-9f192eccf-120k-10s",
+      "target_rps": 120000,
+      "duration_secs": 10,
+      "achieved_rps_measured": 120008.8,
+      "rpc_err": 0,
+      "net_err": 0,
+      "nonce_err": 0,
+      "committed_summary_total": 128528,
+      "measured_avg_instant_tps": 0.0,
+      "pending_relay_intents_after": 1665544,
+      "post_load_converged": true,
+      "classification": "fail mode; ingress accepted load but owner-relay drain stalled"
+    },
+    {
+      "label": "liveflags-150k-relay-cliff",
+      "artifact": "/tmp/codex-exp-local-liveflags-main-9f192eccf-150k-10s",
+      "target_rps": 150000,
+      "duration_secs": 10,
+      "achieved_rps_measured": 150005.6,
+      "rpc_err": 0,
+      "net_err": 0,
+      "nonce_err": 0,
+      "committed_summary_total": 7352,
+      "measured_avg_instant_tps": 0.0,
+      "pending_relay_intents_after": 2240992,
+      "post_load_converged": true,
+      "classification": "fail mode; sharper owner-relay drain stall above 120k"
+    }
+  ],
+  "decision": {
+    "status": "kept diagnostic; local green artifact retained",
+    "reason": "The local code path is healthy at 100k when live flags are present. Above 100k, the bottleneck is not public ingress acceptance or commit correctness; it is pending Mahi owner-relay drain from observer to validators.",
+    "next_move": "Do not tune consensus from the no-live-flags result. Use the 100k liveflags artifact as the local green baseline. If optimizing locally, target owner-relay drain instrumentation/transport before attempting another >100k run."
+  }
+}

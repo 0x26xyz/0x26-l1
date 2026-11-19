@@ -1,0 +1,52 @@
+[feeder]
+chain_id = {{ and_chain_chain_id }}
+
+[aggregation]
+max_staleness_ms = 30000
+min_sources_per_asset = 3
+
+[adapters.binance]
+enabled = true
+ws_url = "wss://stream.binance.com:9443/ws"
+
+[adapters.okx]
+enabled = true
+ws_url = "wss://ws.okx.com:8443/ws/v5/public"
+
+[adapters.coinbase]
+enabled = true
+ws_url = "wss://advanced-trade-ws.coinbase.com"
+
+[submission.testnet_bridge]
+enabled = true
+node_rpc_url = "http://127.0.0.1:{{ and_chain_validator_rpc_port }}"
+stand_in_feeder_ids_hex = [
+{% for feeder_id in feeder_stand_in_ids %}
+  "{{ feeder_id }}"{% if not loop.last %},{% endif %}
+{% endfor %}
+]
+
+[asset_pairs."BTC"]
+binance = "BTCUSDT"
+okx = "BTC-USDT"
+coinbase = "BTC-USD"
+
+[asset_pairs."ETH"]
+binance = "ETHUSDT"
+okx = "ETH-USDT"
+coinbase = "ETH-USD"
+
+[asset_pairs."SOL"]
+binance = "SOLUSDT"
+okx = "SOL-USDT"
+coinbase = "SOL-USD"
+
+[asset_pairs."DOGE"]
+binance = "DOGEUSDT"
+okx = "DOGE-USDT"
+coinbase = "DOGE-USD"
+
+[asset_pairs."XRP"]
+binance = "XRPUSDT"
+okx = "XRP-USDT"
+coinbase = "XRP-USD"

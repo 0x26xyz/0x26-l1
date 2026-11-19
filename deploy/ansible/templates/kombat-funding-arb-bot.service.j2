@@ -1,0 +1,15 @@
+[Unit]
+Description=Kombat testnet funding-arb bot ({{ bot.id }})
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Restart=always
+RestartSec=5
+EnvironmentFile={{ funding_arb_config_dir }}/funding-arb-{{ bot.id }}.env
+ExecStart={{ funding_arb_install_dir }}/kombat_funding_arb_bot
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,56 @@
+[package]
+name = "kombat-chain-rpc"
+autobins = false
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[lib]
+name = "kombat_chain_rpc"
+path = "src/lib.rs"
+
+[[bin]]
+name = "kombat_chain"
+path = "src/main.rs"
+
+[[bin]]
+name = "kombat_sign"
+path = "src/bin/kombat_sign.rs"
+
+[dependencies]
+async-stream = "0.3.6"
+alloy-consensus = "1.8.3"
+alloy-eips = "1.8.3"
+alloy-primitives = "1.5.7"
+axum = { version = "0.8.1", features = ["http1", "json", "tokio"] }
+base64 = "0.22.1"
+borsh = "1.6.1"
+clap = { version = "4.5.23", features = ["derive"] }
+crossbeam-channel = "0.5.14"
+ed25519-dalek = { version = "2.1.1", features = ["batch"] }
+hex = "0.4.3"
+kombat-chain-consensus = { path = "../consensus" }
+kombat-chain-execution = { path = "../execution" }
+kombat-chain-matching = { path = "../matching" }
+kombat-chain-network = { path = "../network" }
+kombat-chain-node = { path = "../node" }
+kombat-chain-oracle = { path = "../oracle" }
+kombat-chain-policy = { path = "../policy" }
+kombat-chain-state-db = { path = "../state-db" }
+kombat-chain-streams = { path = "../streams" }
+reqwest = { version = "0.12.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+redis = { version = "0.27.6", default-features = false }
+revm = "36.0.0"
+secp256k1 = { version = "0.30.0", features = ["recovery"] }
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.138"
+sha2 = "0.10.9"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time"] }
+num_cpus = "1.16.0"
+
+[dev-dependencies]
+kombat-chain-node = { path = "../node", features = ["test-support"] }
+
+[lints]
+workspace = true

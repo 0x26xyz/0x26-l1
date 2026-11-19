@@ -1,0 +1,89 @@
+- name: Restart bootstrap validator from seeded snapshot with local bridge disabled
+  hosts: kombat_live_testnet
+  gather_facts: false
+  become: true
+  vars:
+    validator_service_name: "{{ and_chain_validator_service_name | default('kombat-chain') }}"
+    validator_env_file: "{{ and_chain_validator_env_file | default(validator_service_name ~ '.env') }}"
+    bootstrap_validator_host: "{{ and_chain_reset_bootstrap_validator_host | default('validator-1') }}"
+    validator_rpc_url: "http://127.0.0.1:{{ and_chain_validator_rpc_port }}"
+    bootstrap_seed_snapshot_path: "{{ and_chain_state_dir }}/snapshots/bootstrap-seeded.snapshot"
+  tasks:
+    - name: Save seeded bootstrap snapshot
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        headers:
+          authorization: "Bearer {{ and_chain_operator_token }}"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_saveSnapshot
+          params:
+            path: "{{ bootstrap_seed_snapshot_path }}"
+          id: "save-bootstrap-seeded-snapshot"
+        return_content: true
+        status_code: 200
+      register: bootstrap_seed_snapshot_save
+      when: inventory_hostname == bootstrap_validator_host
+      failed_when:
+        - bootstrap_seed_snapshot_save.status != 200
+          or (bootstrap_seed_snapshot_save.json.error is defined and bootstrap_seed_snapshot_save.json.error is not none)
+
+    - name: Disable local bridge mutations in bootstrap validator env
+      ansible.builtin.lineinfile:
+        path: "{{ and_chain_config_dir }}/{{ validator_env_file }}"
+        regexp: "^KOMBAT_LOCAL_BRIDGE_MUTATIONS_ENABLED="
+        line: "KOMBAT_LOCAL_BRIDGE_MUTATIONS_ENABLED=0"
+        create: false
+      when: inventory_hostname == bootstrap_validator_host
+
+    - name: Remove legacy one-shot bootstrap snapshot load
+      ansible.builtin.lineinfile:
+        path: "{{ and_chain_config_dir }}/{{ validator_env_file }}"
+        regexp: "^KOMBAT_LOAD_SNAPSHOT_PATH="
+        state: absent
+      when: inventory_hostname == bootstrap_validator_host
+
+    - name: Restart bootstrap validator before logical snapshot load
+      ansible.builtin.systemd_service:
+        name: "{{ validator_service_name }}"
+        state: restarted
+      when: inventory_hostname == bootstrap_validator_host
+
+    - name: Wait for bootstrap validator RPC before logical snapshot load
+      ansible.builtin.shell: |
+        set -euo pipefail
+        curl --max-time 3 -sS -H 'content-type: application/json' \
+          --data '{"jsonrpc":"2.0","method":"kombat_chainInfo","params":{},"id":1}' \
+          http://127.0.0.1:{{ and_chain_validator_rpc_port }} | grep -q '"result"'
+      args:
+        executable: /bin/bash
+      register: bootstrap_seeded_restart_rpc_check
+      changed_when: false
+      retries: 30
+      delay: 2
+      until: bootstrap_seeded_restart_rpc_check.rc == 0
+      when: inventory_hostname == bootstrap_validator_host
+
+    - name: Load seeded bootstrap logical snapshot
+      ansible.builtin.uri:
+        url: "{{ validator_rpc_url }}"
+        method: POST
+        headers:
+          authorization: "Bearer {{ and_chain_operator_token }}"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: kombat_loadSnapshot
+          params:
+            path: "{{ bootstrap_seed_snapshot_path }}"
+            force_reset: true
+          id: "load-bootstrap-seeded-snapshot"
+        return_content: true
+        status_code: 200
+      register: bootstrap_seed_snapshot_load
+      when: inventory_hostname == bootstrap_validator_host
+      failed_when:
+        - bootstrap_seed_snapshot_load.status != 200
+          or (bootstrap_seed_snapshot_load.json.error is defined and bootstrap_seed_snapshot_load.json.error is not none)

@@ -1,0 +1,130 @@
+{
+  "id": 259,
+  "name": "v3-v4-role-swap-replay",
+  "status": "kept diagnostic; not green",
+  "date": "2026-04-26",
+  "base_results": [
+    {
+      "decision_log_item": 251,
+      "committed_tps": 77666.8,
+      "artifact": "/tmp/and-live-251-v1-nginx-stopped-100k-60s",
+      "finding": "clean item251 reference under the default physical-host to validator-role mapping"
+    },
+    {
+      "decision_log_item": 258,
+      "committed_tps": 35953.1,
+      "artifact": "/tmp/and-live-258-post-reboot-item251-replay-100k-60s",
+      "finding": "post-reboot exact replay remained far below green; validator-4 physical host stayed collapsed"
+    }
+  ],
+  "hypothesis": "The remaining live regression either follows the physical VPS host or follows validator identity/data shard. Swapping validator-3 and validator-4 identities/keys while keeping physical IPs fixed will distinguish the two without changing protocol code.",
+  "files": [
+    "chain/deploy/ansible/inventory/259-v3-v4-role-swap.yml",
+    "chain/experiments/live/259-v3-v4-role-swap-replay.json",
+    "chain/THROUGHPUT_DECISION_LOG.md"
+  ],
+  "git_environment_anchors": {
+    "plan_tag": "chain-exp-259-v3-v4-role-swap-replay-plan",
+    "replay_binary": "/tmp/kombat_chain-live-dd022982",
+    "replay_binary_sha256": "dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd",
+    "swap_inventory": "chain/deploy/ansible/inventory/259-v3-v4-role-swap.yml"
+  },
+  "role_swap": {
+    "physical_validator_3_host": "203.0.113.14",
+    "physical_validator_3_runs_identity": "0x0404040404040404040404040404040404040404040404040404040404040404",
+    "physical_validator_4_host": "203.0.113.16",
+    "physical_validator_4_runs_identity": "0x0303030303030303030303030303030303030303030303030303030303030303",
+    "unchanged": ["validator-1", "validator-2", "public_rpc_url per physical host", "loadtest hosts.txt physical endpoint mapping"]
+  },
+  "planned_commands": [
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) KOMBAT_BINARY_PATH=/tmp/kombat_chain-live-dd022982 .venv/bin/ansible-playbook -i inventory/259-v3-v4-role-swap.yml playbooks/deploy.yml",
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) KOMBAT_BINARY_PATH=/tmp/kombat_chain-live-dd022982 .venv/bin/ansible-playbook -i inventory/259-v3-v4-role-swap.yml playbooks/verify.yml",
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible -i inventory/259-v3-v4-role-swap.yml kombat_live_testnet -m shell -a 'set -euo pipefail; systemctl stop kombat-chain-ingress3 kombat-chain-ingress2 kombat-chain-ingress kombat-chain; rm -rf /var/lib/and-chain; mkdir -p /var/lib/and-chain/snapshots; chown -R and-chain:and-chain /var/lib/and-chain; systemctl start kombat-chain; systemctl start kombat-chain-ingress kombat-chain-ingress2 kombat-chain-ingress3 executable=/bin/bash'",
+    "LOADTEST_OUTPUT_DIR=/tmp/and-live-259-v3-v4-role-swap-100k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=1 LOADTEST_FAIL_ON_ERRORS=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 100000 60",
+    "bash chain/scripts/live_network_status.sh /tmp/and-live-testnet",
+    "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) KOMBAT_BINARY_PATH=/tmp/kombat_chain-live-dd022982 .venv/bin/ansible-playbook playbooks/deploy.yml"
+  ],
+  "result": {
+    "artifact": "/tmp/and-live-259-v3-v4-role-swap-100k-60s",
+    "committed_total": 910204,
+    "committed_tps": 15170.1,
+    "ok_total": 3393864,
+    "measured_rps_total": 52612.0,
+    "rpc_err_total": 0,
+    "nonce_err_total": 0,
+    "net_err_total": 0,
+    "endpoint_rps": {
+      "validator-1-p8645": 2265.3,
+      "validator-1-p8646": 2226.7,
+      "validator-1-p8647": 2271.5,
+      "validator-2-p8645": 7699.6,
+      "validator-2-p8646": 7719.3,
+      "validator-2-p8647": 7687.5,
+      "validator-3-p8645": 7179.9,
+      "validator-3-p8646": 7120.8,
+      "validator-3-p8647": 7129.1,
+      "validator-4-p8645": 421.7,
+      "validator-4-p8646": 445.5,
+      "validator-4-p8647": 445.1
+    },
+    "common_height_state_root": {
+      "height": 67,
+      "block_hash_hex": "0xedbb6b67ddd2fd60055a76e31c52d995bff592e5c8a22c50c4fe9678be1c4e5a",
+      "state_root_hex": "0xf65da2b25744f6bb72b5d360ae54b4754006928d254bae48ef42df2330bce187",
+      "matched_all_validators": true
+    },
+    "post_run_pre_admitted_pool_items": {
+      "validator-1": 172080,
+      "validator-2": 143864,
+      "validator-3": 137744,
+      "validator-4": 120088
+    },
+    "immediate_post_run_mahi_metrics": {
+      "commit_log_hash_hex": "0x55e426461fcfe91d0147050e18b3ce61283531359b74558e4b869a1d55366ea4",
+      "committed_block_count": 533,
+      "executed_intent_count": 2576872,
+      "validator_4_sigverify_ms": {
+        "p50": 295,
+        "p90": 724,
+        "max": 2831
+      },
+      "validator_4_inbound_accept_ms": {
+        "p90": 151,
+        "max": 518
+      },
+      "validator_4_commit_execution_batch_ms": {
+        "p50": 291,
+        "p90": 726,
+        "max": 1056
+      }
+    },
+    "systemd_cpu_usage_nsec": {
+      "validator-1": 349684779000,
+      "validator-2": 171880573000,
+      "validator-3": 194189977000,
+      "validator-4": 873756301000
+    },
+    "classification": "The bottleneck stayed with physical validator-4 host 203.0.113.16 after it was assigned validator-3 identity 0x03. This points at physical VPS/substrate/runtime behavior, not validator identity 0x04 or data shard routing."
+  },
+  "restore": {
+    "default_topology_redeployed": true,
+    "default_topology_wiped_and_restarted": true,
+    "final_verify_passed": true,
+    "binary_sha256": "dd02298286ef973ebc1eec24459cd58cdc80f7c5c5e97ffee48d52b5979881dd"
+  },
+  "success_criteria": {
+    "zero_rpc_errors": true,
+    "zero_nonce_errors": true,
+    "zero_network_errors": true,
+    "common_height_state_roots_match": true,
+    "diagnostic_classification": "bad performance either stays with physical host 203.0.113.16 or follows validator identity 0x04 to 203.0.113.14",
+    "default_topology_restored_after_run": true
+  },
+  "interpretation": {
+    "bad_stays_on_validator_4_physical_endpoint": "physical VPS host/substrate is causal; move benchmark control to fresh host or remove this host from green topology",
+    "bad_moves_to_validator_3_physical_endpoint": "validator identity/data-shard path is causal; inspect owner assignment, key/id-specific routing, and validator-id sharding",
+    "both_recover": "role placement interaction was causal; rerun to confirm before changing topology",
+    "both_bad": "cluster-wide substrate or loadgen control is unstable; repro on fresh Ansible baseline"
+  },
+  "rollback": "Completed after evidence collection: redeployed the default inventory/testnet.yml exact item251 topology, wiped state, restarted services, and verified all services/RPC ports with the item251 binary sha256."
+}

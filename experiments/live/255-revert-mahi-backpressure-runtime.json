@@ -1,0 +1,119 @@
+{
+  "id": 255,
+  "name": "revert-mahi-backpressure-runtime",
+  "status": "binned",
+  "date": "2026-04-26",
+  "base_results": [
+    {
+      "decision_log_item": 251,
+      "committed_tps": 77666.8,
+      "finding": "current clean live reference before item253 runtime changes"
+    },
+    {
+      "decision_log_item": 253,
+      "status": "binned",
+      "finding": "observer relay queue bound produced retries and cut delivery"
+    },
+    {
+      "decision_log_item": 254,
+      "status": "binned",
+      "finding": "raising thresholds removed retries but still collapsed TPS and left Mahi pools backlogged"
+    }
+  ],
+  "hypothesis": "Items 253 and 254 show the new observer/owner backpressure runtime changes are the regression source. Reverting those runtime and Ansible env changes while keeping the decision-log artifacts should restore item-251-style green behavior.",
+  "planned_files": [
+    "chain/crates/rpc/src/lib.rs",
+    "chain/deploy/ansible/inventory/group_vars/kombat_live_testnet.yml",
+    "chain/deploy/ansible/playbooks/verify.yml",
+    "chain/deploy/ansible/templates/kombat-chain.env.j2",
+    "chain/deploy/ansible/templates/kombat-ingress.env.j2",
+    "chain/experiments/live/255-revert-mahi-backpressure-runtime.json",
+    "chain/THROUGHPUT_DECISION_LOG.md"
+  ],
+  "rollback_verification": {
+    "runtime_diff_target": "02be31a98",
+    "expectation": "No diff for the touched runtime/env files versus the pre-item253 plan commit, excluding new experiment and decision-log artifacts.",
+    "result": "passed"
+  },
+  "git": {
+    "code_commit": "d13863cc0",
+    "code_tag": "chain-exp-255-revert-mahi-backpressure-runtime-code"
+  },
+  "deployed_binary": {
+    "path": "/tmp/kombat_chain-live-d13863cc0-linux",
+    "sha256": "a23bfe2e08411e99513577f6936e325ac8194c194fc06ab8c435d33559b78228",
+    "format": "ELF 64-bit x86-64 Linux"
+  },
+  "tests": [
+    {
+      "command": "cargo test -p kombat-chain-rpc --manifest-path chain/Cargo.toml --lib -- --test-threads=1",
+      "result": "183 passed; 0 failed"
+    }
+  ],
+  "live_steps": [
+    {
+      "description": "build release binary natively for Linux from the tagged rollback commit",
+      "command": "cargo build --release -p kombat-chain-rpc --bin kombat_chain"
+    },
+    {
+      "description": "deploy default three-ingress topology without item253 backpressure env lines",
+      "command": "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) KOMBAT_BINARY_PATH=/tmp/kombat_chain-live-<commit>-linux .venv/bin/ansible-playbook playbooks/deploy.yml"
+    },
+    {
+      "description": "wipe state and restart default live topology",
+      "command": "cd chain/deploy/ansible && KOMBAT_OPERATOR_TOKEN=$(grep -m1 '^KOMBAT_OPERATOR_TOKEN=' /tmp/and-live-testnet/validator-1.env | cut -d= -f2-) .venv/bin/ansible kombat_live_testnet -m shell -a 'systemctl stop kombat-chain-ingress3 kombat-chain-ingress2 kombat-chain-ingress kombat-chain && rm -rf /var/lib/and-chain && mkdir -p /var/lib/and-chain/snapshots && chown -R and-chain:and-chain /var/lib/and-chain && systemctl start kombat-chain && systemctl start kombat-chain-ingress kombat-chain-ingress2 kombat-chain-ingress3'"
+    },
+    {
+      "description": "run current clean reference topology",
+      "artifact": "/tmp/and-live-255-rollback-backpressure-100k-60s",
+      "command": "LOADTEST_OUTPUT_DIR=/tmp/and-live-255-rollback-backpressure-100k-60s LOADTEST_DRAIN_SECS=30 LOADTEST_BATCH_SIZE=8 LOADTEST_PIPELINE_DEPTH=1 LOADTEST_FAIL_ON_ERRORS=1 bash chain/scripts/loadtest_live_network_multi_ingress.sh /tmp/and-live-testnet 32 100000 60"
+    }
+  ],
+  "success_criteria": {
+    "request_errors": 0,
+    "state_roots_match_at_common_height": true,
+    "pools_drained": true,
+    "committed_tps_floor": 76000,
+    "expected_reference": "item251 77,666.8 TPS"
+  },
+  "result": {
+    "artifact": "/tmp/and-live-255-rollback-backpressure-100k-60s",
+    "duration_secs": 60,
+    "endpoint_count": 12,
+    "ok_total": 3877792,
+    "rpc_err_total": 0,
+    "nonce_err_total": 0,
+    "net_err_total": 0,
+    "measured_rps_total": 59058.6,
+    "committed_total": 1069296,
+    "committed_tps": 17821.6,
+    "post_run_pool_items": {
+      "validator-1": 434784,
+      "validator-2": 375944,
+      "validator-3": 391736,
+      "validator-4": 360040
+    },
+    "common_height_check": {
+      "height": 59,
+      "validator-1": {
+        "block_hash_hex": "0x773dc0032e5fab537e25d9a56de5cdb45f02f366afdad187bd0bb4fb4dee420c",
+        "state_root_hex": "0x501998d91b6e5901021b41dcca25c795d207024e1cbc7bc6322b4c42cafe5cfb"
+      },
+      "validator-2": {
+        "block_hash_hex": "0x773dc0032e5fab537e25d9a56de5cdb45f02f366afdad187bd0bb4fb4dee420c",
+        "state_root_hex": "0x501998d91b6e5901021b41dcca25c795d207024e1cbc7bc6322b4c42cafe5cfb"
+      },
+      "validator-3": {
+        "block_hash_hex": "0x773dc0032e5fab537e25d9a56de5cdb45f02f366afdad187bd0bb4fb4dee420c",
+        "state_root_hex": "0x501998d91b6e5901021b41dcca25c795d207024e1cbc7bc6322b4c42cafe5cfb"
+      },
+      "validator-4": {
+        "block_hash_hex": "0xe384b550bb17110a4605cdd0333bc4cecab81d70e77b8e3d104b4873126390b7",
+        "state_root_hex": "0x65c6aa467ff7cf75bf32a2ac96bdd012cf7f63321b3240a37fbd9a899cbd2d4c"
+      },
+      "matched": false
+    },
+    "decision": "binned",
+    "reason": "The runtime/env rollback removed the item253 backpressure surfaces but did not recover item251-class behavior. Throughput fell to 17,821.6 TPS, Mahi pools stayed heavily backlogged, and validator-4 diverged at common height 59. The loss of green behavior is not explained solely by the item253 runtime code."
+  }
+}
