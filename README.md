@@ -7,6 +7,9 @@ It was an engineering prototype run as a controlled testnet. It is no longer
 operated. This repository exists as the public artifact for the paper
 *0x26 Chain: Execution Contracts for a DAG-Ordered Trading Ledger*.
 
+**Read the paper:** [paper/0x26-chain-execution-contracts.pdf](paper/0x26-chain-execution-contracts.pdf)
+(20 pages). A shorter account is in [paper/BLOG_POST.md](paper/BLOG_POST.md).
+
 ## What is here
 
 - `crates/`: the Rust workspace (consensus, execution, matching, policy,
